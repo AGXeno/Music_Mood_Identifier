@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Music, Send, ArrowLeft, Heart, Smile, Activity, Save, History, Clock, Trash2 } from 'lucide-react';
+import MusicRecommenderMQTT from './mqtt/MQTTClient';
+import mqttConfig from './config/mqttConfig';
 
 const ThemeContext = React.createContext();
 
@@ -48,17 +50,15 @@ const useTheme = () => {
     return context;
 };
 
-const Header = ({ onNavigateHome, onNavigateHistory, currentPage }) => {
+const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, onLogout }) => {
     const theme = useTheme();
 
     return (
-        <header
-            className="border-b transition-colors duration-300 sticky top-0 z-50 backdrop-blur-sm"
+        <header className="border-b transition-colors duration-300 sticky top-0 z-50 backdrop-blur-sm"
             style={{
                 borderColor: theme.colors.border,
                 backgroundColor: `${theme.colors.background}95`
-            }}
-        >
+            }}>
             <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
                 <div
                     className="flex items-center space-x-3 cursor-pointer"
@@ -79,9 +79,25 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage }) => {
                             AI-Powered Music Recommendations
                         </p>
                     </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
+                </div>                <div className="flex items-center space-x-2">
+                    {currentUser && (
+                        <>
+                            <div className="text-sm mr-4" style={{ color: theme.colors.textSecondary }}>
+                                Logged in as <span className="font-semibold">{currentUser.name}</span>
+                            </div>
+                            <button
+                                onClick={onLogout}
+                                className="p-2 rounded-lg transition-all duration-200 hover:scale-105 flex items-center space-x-2 mr-2"
+                                style={{
+                                    backgroundColor: theme.colors.surface,
+                                    border: `1px solid ${theme.colors.border}`,
+                                    color: theme.colors.text
+                                }}
+                            >
+                                <span className="text-sm">Logout</span>
+                            </button>
+                        </>
+                    )}
                     {currentPage !== 'history' && (
                         <button
                             onClick={onNavigateHistory}
@@ -117,12 +133,65 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage }) => {
     );
 };
 
-const TextInputPage = ({ onSubmit }) => {
+const LoginPage = ({ onLogin, isLoading, error }) => {
+    const theme = useTheme();
+    
+    return (
+        <div className="max-w-md mx-auto mt-20 p-6 rounded-xl"
+            style={{ backgroundColor: theme.colors.surface, border: `1px solid ${theme.colors.border}` }}>
+            <h2 className="text-2xl font-bold mb-6">Login to MoodTunes</h2>
+            
+            {error && (
+                <div className="mb-4 p-3 rounded bg-red-100 text-red-700 border border-red-200">
+                    {error}
+                </div>
+            )}
+            
+            <div className="space-y-4">
+                <button
+                    onClick={() => onLogin('jim')}
+                    disabled={isLoading}
+                    className="w-full p-3 rounded-lg transition-all duration-200 hover:scale-105"
+                    style={{
+                        backgroundColor: theme.colors.primary,
+                        color: '#ffffff'
+                    }}
+                >
+                    {isLoading ? 'Logging in...' : 'Login as Jim'}
+                </button>
+                
+                <button
+                    onClick={() => onLogin('stephanie')}
+                    disabled={isLoading}
+                    className="w-full p-3 rounded-lg transition-all duration-200 hover:scale-105"
+                    style={{
+                        backgroundColor: theme.colors.secondary,
+                        color: '#ffffff'
+                    }}
+                >
+                    {isLoading ? 'Logging in...' : 'Login as Stephanie'}
+                </button>
+            </div>
+        </div>
+    );
+};
+
+const TextInputPage = ({ onSubmit, currentUser }) => {
     const [text, setText] = useState('');
     const [selectedExample, setSelectedExample] = useState('');
     const theme = useTheme();
 
-    const examples = [
+    // Customize examples based on user preferences
+    const examples = currentUser ? [
+        `I'm in the mood for some ${currentUser.preferredGenre} music today!`,
+        "Just got promoted at work! I'm so excited and energized right now!",
+        "Had a rough day at work, feeling stressed and need something to calm down.",
+        "It's a beautiful sunny morning and I'm ready to conquer the world!",
+        "Missing my best friend who moved away last month. Feeling a bit lonely.",
+        "Celebrating my anniversary with my partner. Love is in the air!",
+        "Stuck in traffic again... this is so frustrating and boring.",
+        "Just finished an amazing workout. Feeling strong and motivated!"
+    ] : [
         "I'm feeling nostalgic today, thinking about old memories and simpler times.",
         "Just got promoted at work! I'm so excited and energized right now!",
         "Had a rough day at work, feeling stressed and need something to calm down.",
@@ -580,66 +649,144 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
 };
 
 const App = () => {
-    const [currentPage, setCurrentPage] = useState('input');
-    const [analyzedText, setAnalyzedText] = useState('');
+    const [currentUser, setCurrentUser] = useState(null);
+    const [currentPage, setCurrentPage] = useState('home');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [currentText, setCurrentText] = useState('');
+    const [currentAnalysis, setCurrentAnalysis] = useState(null);
     const [savedAnalyses, setSavedAnalyses] = useState([]);
+    const mqttClient = React.useRef(new MusicRecommenderMQTT(mqttConfig)).current;
 
-    const handleTextSubmit = (text) => {
-        setAnalyzedText(text);
-        setCurrentPage('results');
-    };
+    const handleTextSubmit = async (text) => {
+        setIsLoading(true);
+        setError(null);
+        setCurrentText(text);
+        
+        try {
+            // Save session to MQTT with mock sentiment and songs for now
+            const mockSentiment = {
+                joy: 0.65,
+                sadness: 0.1,
+                anger: 0.15,
+                fear: 0.1
+            };
 
-    const handleNavigateBack = () => {
-        setCurrentPage('input');
-    };
+            const mockSongs = [
+                { name: "Good as Hell", artist: "Lizzo", album: "Cuz I Love You", genre: "Pop" },
+                { name: "Happy", artist: "Pharrell Williams", album: "Girl", genre: "Pop" },
+                { name: "Can't Stop the Feeling!", artist: "Justin Timberlake", album: "Trolls", genre: "Pop" }
+            ];
 
-    const handleNavigateHome = () => {
-        setCurrentPage('input');
-    };
+            await mqttClient.saveSession(text, mockSentiment, mockSongs);
+            
+            // Set current analysis
+            setCurrentAnalysis({
+                text,
+                timestamp: new Date().toISOString(),
+                moodAnalysis: [
+                    { mood: 'Happy', percentage: 65, icon: Smile, color: '#08D9D6' },
+                    { mood: 'Excited', percentage: 25, icon: Activity, color: '#00CAFF' },
+                    { mood: 'Nostalgic', percentage: 10, icon: Heart, color: '#0065F8' }
+                ],
+                songs: mockSongs
+            });
 
-    const handleNavigateHistory = () => {
-        setCurrentPage('history');
+            // Navigate to results page
+            setCurrentPage('results');
+        } catch (err) {
+            setError('Failed to analyze text: ' + err.message);
+            console.error('Text analysis failed:', err);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleSaveAnalysis = (analysisData) => {
-        setSavedAnalyses(prev => [analysisData, ...prev]);
+        setSavedAnalyses(prev => [...prev, analysisData]);
     };
 
     const handleViewAnalysis = (analysis) => {
-        setAnalyzedText(analysis.text);
+        setCurrentAnalysis(analysis);
+        setCurrentText(analysis.text);
         setCurrentPage('results');
     };
 
     const handleDeleteAnalysis = (analysisId) => {
-        setSavedAnalyses(prev => prev.filter(analysis => analysis.id !== analysisId));
+        setSavedAnalyses(prev => prev.filter(a => a.id !== analysisId));
     };
+
+    const handleNavigateBack = () => setCurrentPage('home');
+
+    const handleLogin = async (username) => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            const user = await mqttClient.login(username);
+            setCurrentUser(user);
+            setCurrentPage('home');
+        } catch (err) {
+            setError(err.message);
+            console.error('Login failed:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        setIsLoading(true);
+        try {
+            await mqttClient.logout();
+            setCurrentUser(null);
+            setCurrentPage('login');
+        } catch (err) {
+            console.error('Logout failed:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const navigateToHome = () => setCurrentPage('home');
+    const navigateToHistory = () => setCurrentPage('history');
 
     return (
         <ThemeProvider>
             <div className="min-h-screen">
                 <Header
-                    onNavigateHome={handleNavigateHome}
-                    onNavigateHistory={handleNavigateHistory}
+                    onNavigateHome={navigateToHome}
+                    onNavigateHistory={navigateToHistory}
                     currentPage={currentPage}
+                    currentUser={currentUser}
+                    onLogout={handleLogout}
                 />
-                <main>
-                    {currentPage === 'input' && (
-                        <TextInputPage onSubmit={handleTextSubmit} />
-                    )}
-                    {currentPage === 'results' && (
-                        <ResultsPage
-                            text={analyzedText}
-                            onNavigateBack={handleNavigateBack}
-                            onSaveAnalysis={handleSaveAnalysis}
-                            savedAnalyses={savedAnalyses}
+                
+                <main className="max-w-6xl mx-auto px-4 py-8">
+                    {!currentUser ? (
+                        <LoginPage
+                            onLogin={handleLogin}
+                            isLoading={isLoading}
+                            error={error}
                         />
-                    )}
-                    {currentPage === 'history' && (
+                    ) : currentPage === 'history' ? (
                         <HistoryPage
                             savedAnalyses={savedAnalyses}
                             onNavigateBack={handleNavigateBack}
                             onViewAnalysis={handleViewAnalysis}
                             onDeleteAnalysis={handleDeleteAnalysis}
+                        />
+                    ) : currentPage === 'results' ? (
+                        <ResultsPage
+                            text={currentText}
+                            onNavigateBack={handleNavigateBack}
+                            onSaveAnalysis={handleSaveAnalysis}
+                            savedAnalyses={savedAnalyses}
+                        />
+                    ) : (
+                        <TextInputPage 
+                            onSubmit={handleTextSubmit}
+                            currentUser={currentUser}
+                            isLoading={isLoading}
+                            error={error}
                         />
                     )}
                 </main>
