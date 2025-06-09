@@ -15,17 +15,17 @@
     "mqtt": "^4.3.7",
     "@tensorflow/tfjs": "^4.2.0",
     "@tensorflow/tfjs-backend-webgl": "^4.2.0"
-  },
-  "devDependencies": {
+  },  "devDependencies": {
     "jest": "^29.5.0",
-    "@jest/environment-jsdom": "^29.5.0",
+    "jest-environment-jsdom": "^29.5.0",
     "http-server": "^14.1.1"
-  },
-  "jest": {
-    "testEnvironment": "jsdom",
+  },  "jest": {
+    "testEnvironment": "jest-environment-jsdom",
     "setupFilesAfterEnv": ["<rootDir>/tests/setup.js"],
     "moduleFileExtensions": ["js", "json"],
-    "transform": {},
+    "transform": {
+      "^.+\\.[t|j]sx?$": "babel-jest"
+    },
     "testMatch": [
       "**/tests/**/*.test.js"
     ]
