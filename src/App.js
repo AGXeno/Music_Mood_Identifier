@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Moon, Sun, Music, Send, ArrowLeft, Heart, Smile, Activity, Save, History, Clock, Trash2 } from 'lucide-react';
 import MusicRecommenderMQTT from './mqtt/MQTTClient';
 import mqttConfig from './config/mqttConfig';
+import SpotifyService from './services/SpotifyAPI';
+import SentimentAnalyzer from './services/SentimentAnalysis';
 
 const ThemeContext = React.createContext();
 
@@ -176,21 +178,127 @@ const LoginPage = ({ onLogin, isLoading, error }) => {
     );
 };
 
-const TextInputPage = ({ onSubmit, currentUser }) => {
+const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
+    const theme = useTheme();
+    const [selectedGenre, setSelectedGenre] = useState('');
+
+    const genres = [
+        { id: 'pop', name: 'Pop', description: 'Mainstream, catchy, popular music', icon: '🎵' },
+        { id: 'indie', name: 'Indie', description: 'Alternative, underground, artistic', icon: '🎸' },
+        { id: 'hip-hop', name: 'Hip-Hop', description: 'Rap, urban, rhythmic beats', icon: '🎤' },
+        { id: 'electronic', name: 'Electronic', description: 'EDM, house, techno, synth', icon: '🎛️' },
+        { id: 'jazz', name: 'Jazz', description: 'Smooth, sophisticated, improvised', icon: '🎺' },
+        { id: 'country', name: 'Country', description: 'Folk, americana, southern', icon: '🤠' },
+        { id: 'latin', name: 'Latin', description: 'Reggaeton, salsa, bachata', icon: '💃' },
+        { id: 'rock', name: 'Rock', description: 'Guitar-driven, energetic', icon: '🤘' }
+    ];
+
+    const handleGenreSelect = (genreId) => {
+        setSelectedGenre(genreId);
+        onGenreSelected(genreId);
+    };
+
+    return (
+        <div className="max-w-4xl mx-auto px-4 py-8">
+            <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold mb-4">
+                    Choose Your Preferred 
+                    <span
+                        className="ml-2"
+                        style={{ color: theme.colors.primary }}
+                    >
+                        Music Genre
+                    </span>
+                </h2>
+                <p
+                    className="text-lg max-w-2xl mx-auto mb-4"
+                    style={{ color: theme.colors.textSecondary }}
+                >
+                    Help us personalize your music recommendations by selecting your favorite genre.
+                </p>
+                <p
+                    className="text-sm"
+                    style={{ color: theme.colors.textSecondary }}
+                >
+                    Welcome, <strong>{currentUser.name}</strong>! You can always change this later.
+                </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                {genres.map((genre) => (
+                    <button
+                        key={genre.id}
+                        onClick={() => handleGenreSelect(genre.id)}
+                        className="p-6 rounded-xl border-2 transition-all duration-200 hover:scale-105 text-center"
+                        style={{
+                            backgroundColor: selectedGenre === genre.id ? `${theme.colors.primary}20` : theme.colors.surface,
+                            borderColor: selectedGenre === genre.id ? theme.colors.primary : theme.colors.border,
+                            color: theme.colors.text
+                        }}
+                    >
+                        <div className="text-3xl mb-3">{genre.icon}</div>
+                        <h3 className="text-lg font-semibold mb-2">{genre.name}</h3>
+                        <p 
+                            className="text-sm"
+                            style={{ color: theme.colors.textSecondary }}
+                        >
+                            {genre.description}
+                        </p>
+                    </button>
+                ))}
+            </div>
+
+            <div className="flex justify-center space-x-4">
+                <button
+                    onClick={onSkip}
+                    className="px-6 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-105"
+                    style={{
+                        backgroundColor: theme.colors.surface,
+                        border: `1px solid ${theme.colors.border}`,
+                        color: theme.colors.text
+                    }}
+                >
+                    Skip for Now
+                </button>
+                
+                {selectedGenre && (
+                    <button
+                        onClick={() => onGenreSelected(selectedGenre)}
+                        className="px-8 py-3 rounded-lg font-semibold transition-all duration-200 hover:scale-105"
+                        style={{
+                            backgroundColor: theme.colors.primary,
+                            color: 'white'
+                        }}
+                    >
+                        Continue with {genres.find(g => g.id === selectedGenre)?.name}
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
     const [text, setText] = useState('');
     const [selectedExample, setSelectedExample] = useState('');
     const theme = useTheme();
 
     // Customize examples based on user preferences
     const examples = currentUser ? [
-        `I'm in the mood for some ${currentUser.preferredGenre} music today!`,
+        `I'm in the mood for some ${currentUser.preferredGenre || 'great'} music today!`,
         "Just got promoted at work! I'm so excited and energized right now!",
         "Had a rough day at work, feeling stressed and need something to calm down.",
         "It's a beautiful sunny morning and I'm ready to conquer the world!",
         "Missing my best friend who moved away last month. Feeling a bit lonely.",
         "Celebrating my anniversary with my partner. Love is in the air!",
-        "Stuck in traffic again... this is so frustrating and boring.",
-        "Just finished an amazing workout. Feeling strong and motivated!"
+        
+        // Spanish examples for Latin music testing
+        "¡Estoy súper feliz hoy! Quiero celebrar con música alegre.",
+        "Me siento un poco triste, necesito canciones que me levanten el ánimo.",
+        "¡Tengo ganas de bailar! Dame reggaeton y salsa.",
+        "Estoy nostálgico, extraño mi país y mi familia.",
+        "Muy enojado con la situación, necesito música para desahogarme.",
+        "Me siento nervioso por la entrevista de mañana."
     ] : [
         "I'm feeling nostalgic today, thinking about old memories and simpler times.",
         "Just got promoted at work! I'm so excited and energized right now!",
@@ -198,8 +306,12 @@ const TextInputPage = ({ onSubmit, currentUser }) => {
         "It's a beautiful sunny morning and I'm ready to conquer the world!",
         "Missing my best friend who moved away last month. Feeling a bit lonely.",
         "Celebrating my anniversary with my partner. Love is in the air!",
-        "Stuck in traffic again... this is so frustrating and boring.",
-        "Just finished an amazing workout. Feeling strong and motivated!"
+        
+        // Spanish examples for testing
+        "¡Estoy muy feliz hoy! Quiero música latina para bailar.",
+        "Me siento triste, necesito bachata o boleros.",
+        "Tengo mucha energía, dame reggaeton!",
+        "Estoy enojado, quiero rock en español."
     ];
 
     const handleSubmit = (e) => {
@@ -234,6 +346,12 @@ const TextInputPage = ({ onSubmit, currentUser }) => {
                 </p>
             </div>
 
+            {error && (
+                <div className="mb-6 p-4 rounded-lg bg-red-100 border border-red-300 text-red-700">
+                    <strong>Error:</strong> {error}
+                </div>
+            )}
+
             <div className="space-y-6">
                 <div>
                     <label
@@ -262,15 +380,24 @@ const TextInputPage = ({ onSubmit, currentUser }) => {
                 <div className="flex justify-center">
                     <button
                         onClick={handleSubmit}
-                        disabled={!text.trim()}
+                        disabled={!text.trim() || isLoading}
                         className="px-8 py-3 rounded-xl font-semibold flex items-center space-x-2 transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                         style={{
-                            backgroundColor: text.trim() ? theme.colors.primary : theme.colors.border,
+                            backgroundColor: (text.trim() && !isLoading) ? theme.colors.primary : theme.colors.border,
                             color: 'white'
                         }}
                     >
-                        <Send className="w-5 h-5" />
-                        <span>Analyze & Get Recommendations</span>
+                        {isLoading ? (
+                            <>
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                <span>Analyzing...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Send className="w-5 h-5" />
+                                <span>Analyze & Get Recommendations</span>
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
@@ -300,43 +427,78 @@ const TextInputPage = ({ onSubmit, currentUser }) => {
     );
 };
 
-const ResultsPage = ({ text, onNavigateBack, onSaveAnalysis, savedAnalyses }) => {
+const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }) => {
     const theme = useTheme();
     const [isSaved, setIsSaved] = useState(false);
 
-    const mockMoodAnalysis = [
-        { mood: 'Happy', percentage: 65, icon: Smile, color: theme.colors.accent },
-        { mood: 'Excited', percentage: 25, icon: Activity, color: theme.colors.tertiary },
-        { mood: 'Nostalgic', percentage: 10, icon: Heart, color: theme.colors.secondary }
-    ];
-
-    const mockSongs = [
-        { id: 1, title: "Good as Hell", artist: "Lizzo", album: "Cuz I Love You", genre: "Pop" },
-        { id: 2, title: "Happy", artist: "Pharrell Williams", album: "Girl", genre: "Pop" },
-        { id: 3, title: "Can't Stop the Feeling!", artist: "Justin Timberlake", album: "Trolls Soundtrack", genre: "Pop" },
-        { id: 4, title: "Walking on Sunshine", artist: "Katrina and the Waves", album: "Walking on Sunshine", genre: "Rock" },
-        { id: 5, title: "I Gotta Feeling", artist: "The Black Eyed Peas", album: "The E.N.D.", genre: "Hip-Hop" },
-        { id: 6, title: "Uptown Funk", artist: "Mark Ronson ft. Bruno Mars", album: "Uptown Special", genre: "Funk" },
-        { id: 7, title: "Don't Stop Me Now", artist: "Queen", album: "Jazz", genre: "Rock" },
-        { id: 8, title: "September", artist: "Earth, Wind & Fire", album: "The Best of Earth, Wind & Fire", genre: "R&B" },
-        { id: 9, title: "Good Vibrations", artist: "The Beach Boys", album: "Smiley Smile", genre: "Rock" },
-        { id: 10, title: "Three Little Birds", artist: "Bob Marley", album: "Exodus", genre: "Reggae" }
-    ];
-
     // Check if this analysis is already saved
     React.useEffect(() => {
-        const isAlreadySaved = savedAnalyses.some(analysis => analysis.text === text);
-        setIsSaved(isAlreadySaved);
-    }, [text, savedAnalyses]);
+        if (analysis && analysis.text) {
+            const isAlreadySaved = savedAnalyses.some(savedAnalysis => savedAnalysis.text === analysis.text);
+            setIsSaved(isAlreadySaved);
+        }
+    }, [analysis, savedAnalyses]);
+
+    // Generate dynamic AI insight based on sentiment
+    const generateAIInsight = (moodAnalysis, sentimentScores, text) => {
+        if (!moodAnalysis || moodAnalysis.length === 0) return "Analysis complete.";
+        
+        const primaryMood = moodAnalysis[0];
+        const percentage = primaryMood.percentage;
+        const moodName = primaryMood.mood.toLowerCase();
+        
+        // Detect if Latin/Spanish context
+        const isLatinContext = /latin|fiesta|dancing|reggaeton|salsa|bachata|español/i.test(text);
+        
+        let insight = "";
+        
+        if (moodName === 'happy') {
+            if (percentage > 70) {
+                insight = isLatinContext 
+                    ? `Your text radiates pure joy and energy! Perfect for upbeat Latin rhythms like reggaeton and salsa.`
+                    : `Your text shows overwhelming positivity with ${percentage}% happiness. Perfect for upbeat, energetic music!`;
+            } else if (percentage > 40) {
+                insight = isLatinContext
+                    ? `You're feeling good vibes! Time for some celebratory Latin music to match your mood.`
+                    : `You're feeling quite positive today. Great for uplifting music that matches your optimistic energy.`;
+            } else {
+                insight = `You're experiencing moderate happiness. Gentle, positive music would complement your mood well.`;
+            }
+        } else if (moodName === 'sad') {
+            if (percentage > 60) {
+                insight = isLatinContext
+                    ? `You're going through a tough time. Let some soulful bachata or boleros help you process these feelings.`
+                    : `You're feeling quite down with ${percentage}% sadness. Gentle, comforting music might help you through this.`;
+            } else {
+                insight = `You seem a bit melancholic. Some reflective music could resonate with your current state.`;
+            }
+        } else if (moodName === 'angry') {
+            insight = isLatinContext
+                ? `You're feeling intense emotions! High-energy reggaeton or Latin rock could be the perfect outlet.`
+                : `You're experiencing anger and frustration. Powerful, energetic music might help you channel these feelings.`;
+        } else if (moodName === 'anxious') {
+            insight = isLatinContext
+                ? `You're feeling nervous. Some calming nueva canción or gentle acoustic Latin music might help soothe you.`
+                : `You're feeling anxious. Calm, peaceful music could help ease your worries.`;
+        } else {
+            insight = `Your emotions are complex. Let music be your companion through this journey.`;
+        }
+        
+        return insight;
+    };
+
+    if (!analysis) {
+        return <div>No analysis data available</div>;
+    }
+
+    const { text, moodAnalysis, songs, sentimentScores } = analysis;
+    const aiInsight = generateAIInsight(moodAnalysis, sentimentScores, text);
 
     const handleSave = () => {
         if (!isSaved) {
             const analysisData = {
                 id: Date.now(),
-                text,
-                timestamp: new Date().toISOString(),
-                moodAnalysis: mockMoodAnalysis,
-                songs: mockSongs
+                ...analysis
             };
             onSaveAnalysis(analysisData);
             setIsSaved(true);
@@ -382,7 +544,7 @@ const ResultsPage = ({ text, onNavigateBack, onSaveAnalysis, savedAnalyses }) =>
                         </div>
 
                         <div className="space-y-3">
-                            {mockMoodAnalysis.map((mood, index) => {
+                            {moodAnalysis.map((mood, index) => {
                                 const IconComponent = mood.icon;
                                 return (
                                     <div
@@ -424,7 +586,7 @@ const ResultsPage = ({ text, onNavigateBack, onSaveAnalysis, savedAnalyses }) =>
                                 color: theme.colors.textSecondary
                             }}
                         >
-                            <strong>AI Insight:</strong> Your text shows predominantly positive emotions with high energy levels. Perfect for upbeat, motivational music!
+                            <strong>AI Insight:</strong> {aiInsight}
                         </div>
                     </div>
                 </div>
@@ -446,7 +608,7 @@ const ResultsPage = ({ text, onNavigateBack, onSaveAnalysis, savedAnalyses }) =>
                         </p>
 
                         <div className="space-y-3">
-                            {mockSongs.map((song, index) => (
+                            {songs.map((song, index) => (
                                 <div
                                     key={song.id}
                                     className="flex items-center p-4 rounded-lg transition-all duration-200 hover:scale-[1.01] border"
@@ -650,53 +812,61 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
 
 const App = () => {
     const [currentUser, setCurrentUser] = useState(null);
-    const [currentPage, setCurrentPage] = useState('home');
+    const [currentPage, setCurrentPage] = useState('login'); // Start with login
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [currentText, setCurrentText] = useState('');
     const [currentAnalysis, setCurrentAnalysis] = useState(null);
     const [savedAnalyses, setSavedAnalyses] = useState([]);
     const mqttClient = React.useRef(new MusicRecommenderMQTT(mqttConfig)).current;
+    const spotifyService = React.useRef(new SpotifyService()).current;
+    const sentimentAnalyzer = React.useRef(new SentimentAnalyzer()).current;
 
     const handleTextSubmit = async (text) => {
         setIsLoading(true);
         setError(null);
-        setCurrentText(text);
         
         try {
-            // Save session to MQTT with mock sentiment and songs for now
-            const mockSentiment = {
-                joy: 0.65,
-                sadness: 0.1,
-                anger: 0.15,
-                fear: 0.1
-            };
-
-            const mockSongs = [
-                { name: "Good as Hell", artist: "Lizzo", album: "Cuz I Love You", genre: "Pop" },
-                { name: "Happy", artist: "Pharrell Williams", album: "Girl", genre: "Pop" },
-                { name: "Can't Stop the Feeling!", artist: "Justin Timberlake", album: "Trolls", genre: "Pop" }
-            ];
-
-            await mqttClient.saveSession(text, mockSentiment, mockSongs);
+            console.log('🎯 Starting sentiment analysis and music recommendations...');
             
-            // Set current analysis
+            // Perform sentiment analysis
+            const sentimentScores = await sentimentAnalyzer.analyzeSentiment(text, currentUser?.id);
+            console.log('📊 Sentiment scores:', sentimentScores);
+            
+            // Get user preferences for Spotify
+            const userPreferences = currentUser ? {
+                preferredGenre: currentUser.preferredGenre || (currentUser.name === 'Jim' ? 'country' : 'pop'),
+                inputText: text
+            } : { inputText: text };
+            
+            // Get Spotify recommendations based on sentiment
+            const spotifyRecommendations = await spotifyService.getRecommendations(sentimentScores, userPreferences);
+            console.log('🎵 Spotify recommendations:', spotifyRecommendations);
+            
+            // Save session to MQTT
+            await mqttClient.saveSession(text, sentimentScores, spotifyRecommendations);
+            
+            // Convert sentiment scores to mood analysis format for UI
+            const moodAnalysis = [
+                { mood: 'Happy', percentage: Math.round(sentimentScores.joy * 100), icon: Smile, color: '#08D9D6' },
+                { mood: 'Sad', percentage: Math.round(sentimentScores.sadness * 100), icon: Heart, color: '#0065F8' },
+                { mood: 'Angry', percentage: Math.round(sentimentScores.anger * 100), icon: Activity, color: '#FF4444' },
+                { mood: 'Anxious', percentage: Math.round(sentimentScores.fear * 100), icon: Activity, color: '#FFA500' }
+            ].filter(mood => mood.percentage > 0).sort((a, b) => b.percentage - a.percentage);
+            
+            // Set current analysis with real data
             setCurrentAnalysis({
                 text,
                 timestamp: new Date().toISOString(),
-                moodAnalysis: [
-                    { mood: 'Happy', percentage: 65, icon: Smile, color: '#08D9D6' },
-                    { mood: 'Excited', percentage: 25, icon: Activity, color: '#00CAFF' },
-                    { mood: 'Nostalgic', percentage: 10, icon: Heart, color: '#0065F8' }
-                ],
-                songs: mockSongs
+                moodAnalysis,
+                songs: spotifyRecommendations,
+                sentimentScores
             });
 
-            // Navigate to results page
+            console.log('✅ Analysis complete, navigating to results');
             setCurrentPage('results');
         } catch (err) {
             setError('Failed to analyze text: ' + err.message);
-            console.error('Text analysis failed:', err);
+            console.error('❌ Text analysis failed:', err);
         } finally {
             setIsLoading(false);
         }
@@ -708,7 +878,6 @@ const App = () => {
 
     const handleViewAnalysis = (analysis) => {
         setCurrentAnalysis(analysis);
-        setCurrentText(analysis.text);
         setCurrentPage('results');
     };
 
@@ -724,13 +893,22 @@ const App = () => {
         try {
             const user = await mqttClient.login(username);
             setCurrentUser(user);
-            setCurrentPage('home');
+            setCurrentPage('genre-selection');
         } catch (err) {
             setError(err.message);
             console.error('Login failed:', err);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleGenreSelected = (genreId) => {
+        setCurrentUser(prev => ({ ...prev, preferredGenre: genreId }));
+        setCurrentPage('home');
+    };
+
+    const handleSkipGenreSelection = () => {
+        setCurrentPage('home');
     };
 
     const handleLogout = async () => {
@@ -767,6 +945,12 @@ const App = () => {
                             isLoading={isLoading}
                             error={error}
                         />
+                    ) : currentPage === 'genre-selection' ? (
+                        <GenrePreferenceSelector
+                            currentUser={currentUser}
+                            onGenreSelected={handleGenreSelected}
+                            onSkip={handleSkipGenreSelection}
+                        />
                     ) : currentPage === 'history' ? (
                         <HistoryPage
                             savedAnalyses={savedAnalyses}
@@ -776,7 +960,7 @@ const App = () => {
                         />
                     ) : currentPage === 'results' ? (
                         <ResultsPage
-                            text={currentText}
+                            analysis={currentAnalysis}
                             onNavigateBack={handleNavigateBack}
                             onSaveAnalysis={handleSaveAnalysis}
                             savedAnalyses={savedAnalyses}

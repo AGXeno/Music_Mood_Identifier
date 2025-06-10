@@ -441,38 +441,6 @@ class MusicRecommenderMQTT {
         }
     }
     
-    // Logout current user
-    async logout() {
-        if (this.isConnected && this.userId) {
-            // Publish logout event
-            await this.client.publish(
-                `musicapp/users/${this.userId}/logout`,
-                JSON.stringify({
-                    userId: this.userId,
-                    timestamp: new Date().toISOString()
-                }),
-                { qos: 1 }
-            );
-
-            // Reset user state
-            this.userId = this.generateUserId();
-            this.topics = {
-                newSession: `musicapp/sessions/${this.userId}/new`,
-                endSession: `musicapp/sessions/${this.userId}/end`,
-                historyRequest: `musicapp/history/${this.userId}/request`, 
-                historyResponse: `musicapp/history/${this.userId}/response`,
-                feedback: `musicapp/feedback/${this.userId}/rating`,
-                feedbackConfirm: `musicapp/feedback/${this.userId}/confirm`,
-                login: `musicapp/users/${this.userId}/login`,
-                logout: `musicapp/users/${this.userId}/logout`,
-                status: 'musicapp/system/status',
-                errors: 'musicapp/system/errors'
-            };
-            
-            // Update subscriptions
-            this.setupSubscriptions();
-        }
-    }
 }
 
 // Export for use in other files
