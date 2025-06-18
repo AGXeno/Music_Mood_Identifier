@@ -119,9 +119,7 @@ class TensorFlowSentimentAnalyzer {
         });
 
         console.log(`📚 Vocabulary loaded with ${this.vocabulary.size} words`);
-    }
-
-    async analyzeSentiment(text, userId = null) {
+    }    async analyzeSentiment(text) {
         if (!this.isLoaded) {
             await this.initialize();
         }
@@ -267,13 +265,8 @@ class TensorFlowSentimentAnalyzer {
         console.log(`🎯 Final sentiment result:`, result);
 
         return result;
-    }
-
-    mapToEmotions(sentiment, originalText) {
+    }    mapToEmotions(sentiment, originalText) {
         const { sentiment: primarySentiment, confidence, energy } = sentiment;
-
-        // Detect language
-        const isSpanish = /[ñáéíóúü]|está|muy|pero|para|con|una|del|las|los/i.test(originalText);
 
         // Start with zero scores for clear distinction
         let emotionScores = {

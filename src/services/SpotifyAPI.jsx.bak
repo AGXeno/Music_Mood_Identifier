@@ -1,54 +1,78 @@
+/* eslint-disable @typescript-eslint/explicit-member-this-type */
+
 import spotifyConfig from '../config/spotifyConfig';
 
+/**
+ * Service class for handling Spotify API interactions
+ */
 class SpotifyService {
+    /**
+     * @constructor
+     * @this {SpotifyService}
+     */
     constructor() {
+        /** @type {string|null} */
         this.accessToken = null;
+        /** @type {number|null} */
         this.tokenExpiry = null;
+        /** @type {string} */
         this.baseUrl = spotifyConfig.apiBaseUrl;
+        /** @type {boolean} */
         this.isUsingMockData = false;
 
+        // Debug logging for Spotify credentials
+        console.log('🔍 Checking Spotify credentials:', {
+            hasClientId: !!spotifyConfig.clientId,
+            clientIdLength: spotifyConfig.clientId?.length,
+            hasClientSecret: !!spotifyConfig.clientSecret,
+            clientSecretLength: spotifyConfig.clientSecret?.length,
+            baseUrl: this.baseUrl
+        });
+
         // Check if we have valid Spotify credentials
-        if (!spotifyConfig.clientId || spotifyConfig.clientId === 'YOUR_SPOTIFY_CLIENT_ID') {
-            console.warn('⚠️ Spotify credentials not configured. Using mock data.');
+        if (!spotifyConfig.clientId || !spotifyConfig.clientSecret) {
+            console.warn('⚠️ Spotify credentials missing or invalid');
             this.isUsingMockData = true;
         }
     }
 
-    // Get Spotify access token using Client Credentials flow
-    async getAccessToken() {
-        // Return mock data if no credentials
+    // Get Spotify access token using Client Credentials flow    async getAccessToken() {
         if (this.isUsingMockData) {
+            console.warn('⚠️ Using mock data - no Spotify credentials');
             return null;
         }
 
-        // Check if token is still valid
+        // Use cached token if still valid
         if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+            console.log('✅ Using cached Spotify token');
             return this.accessToken;
         }
 
         try {
-            const credentials = btoa(`${spotifyConfig.clientId}:${spotifyConfig.clientSecret}`);
+            // Use URLSearchParams for the body
+            const body = new URLSearchParams();
+            body.append('grant_type', 'client_credentials');
 
             const response = await fetch(spotifyConfig.tokenUrl, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': `Basic ${credentials}`
+                    'Authorization': `Basic ${btoa(spotifyConfig.clientId + ':' + spotifyConfig.clientSecret)}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
                 },
-                body: 'grant_type=client_credentials'
+                body: body.toString()
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                throw new Error(`Token request failed: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
             this.accessToken = data.access_token;
-            // Set expiry time (subtract 60 seconds for safety)
             this.tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
 
-            console.log('✅ Spotify access token obtained');
+            console.log('✅ New Spotify access token obtained');
             return this.accessToken;
+
         } catch (error) {
             console.error('❌ Failed to get Spotify token:', error);
             this.isUsingMockData = true;
@@ -58,42 +82,73 @@ class SpotifyService {
 
     // Get music recommendations based on sentiment
     async getRecommendations(sentimentScores, userPreferences = null) {
-        // Use mock data if no Spotify credentials
-        if (this.isUsingMockData) {
-            console.log('🎵 Using mock recommendations (no Spotify credentials)');
-            const isSpanishText = this.detectSpanish(userPreferences?.inputText || '');
-            return this.getMockRecommendations(sentimentScores, isSpanishText);
-        }
+        // Debug logging for inputs
+        console.log('🎵 Getting recommendations:', {
+            sentiment: sentimentScores,
+            preferences: userPreferences
+        });
 
-        // Get access token
+        // Get access token first
         const token = await this.getAccessToken();
         if (!token) {
-            console.log('🎵 Using mock recommendations (token failed)');
-            const isSpanishText = this.detectSpanish(userPreferences?.inputText || '');
-            return this.getMockRecommendations(sentimentScores, isSpanishText);
+            console.warn('⚠️ No valid token available');
+            return this.getMockRecommendations(sentimentScores, false);
         }
 
         try {
-            // Map sentiment to music attributes
+            // Map sentiment to music attributes with user preferences
             const musicAttributes = this.mapSentimentToMusic(sentimentScores, userPreferences);
 
-            const queryParams = new URLSearchParams({
-                seed_genres: musicAttributes.genres.slice(0, 3).join(','), // Max 3 genres
-                target_valence: musicAttributes.valence,
-                target_energy: musicAttributes.energy,
-                target_danceability: musicAttributes.danceability,
-                target_popularity: musicAttributes.popularity,
-                limit: spotifyConfig.defaultLimit
+            // Ensure we have valid genres and match Spotify's genre list
+            const spotifyGenres = ["acoustic", "afrobeat", "alt-rock", "alternative", "ambient", "blues", 
+                "classical", "country", "dance", "electronic", "folk", "funk", "hip-hop", "house", 
+                "indie", "jazz", "latin", "metal", "pop", "punk", "r-n-b", "rock", "soul"];
+
+            const validGenres = musicAttributes.genres
+                .filter(Boolean)
+                .map(g => g.toLowerCase())
+                .filter(g => spotifyGenres.includes(g))
+                .slice(0, 5); // Spotify allows max 5 seed genres
+
+            if (validGenres.length === 0) {
+                validGenres.push("pop", "rock"); // Fallback to popular genres
+            }
+
+            console.log('🎸 Using genres:', validGenres);
+
+            // Build query parameters with validated genres
+            const params = new URLSearchParams();
+            params.append('seed_genres', validGenres.join(','));
+            
+            // Ensure values are between 0 and 1
+            const valence = Math.max(0, Math.min(1, musicAttributes.valence));
+            const energy = Math.max(0, Math.min(1, musicAttributes.energy));
+            const danceability = Math.max(0, Math.min(1, musicAttributes.danceability));
+            
+            params.append('target_valence', valence.toFixed(3));
+            params.append('target_energy', energy.toFixed(3));
+            params.append('target_danceability', danceability.toFixed(3));
+            params.append('limit', '20');
+
+            if (!isNaN(musicAttributes.popularity)) {
+                params.append('target_popularity', Math.round(Math.max(0, Math.min(100, musicAttributes.popularity))).toString());
+            }
+
+            // Construct URL with base and parameters
+            const requestUrl = `${spotifyConfig.recommendationsUrl}?${params.toString()}`;
+            console.log('📡 Spotify API request:', requestUrl, {
+                genres: validGenres,
+                valence,
+                energy,
+                danceability,
+                token: token ? 'present' : 'missing'
             });
 
-            console.log('🎯 Spotify search params:', Object.fromEntries(queryParams));
-
-            const response = await fetch(`${this.baseUrl}/recommendations?${queryParams}`, {
+            const response = await fetch(requestUrl, {
+                method: 'GET',
                 headers: {
-                    'Authorization': `Bearer ${this.accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                signal: AbortSignal.timeout(spotifyConfig.requestTimeout)
+                    'Authorization': `Bearer ${token}`
+                }
             });
 
             if (!response.ok) {
@@ -111,125 +166,164 @@ class SpotifyService {
                 title: track.name,
                 artist: track.artists.map(artist => artist.name).join(', '),
                 album: track.album.name,
-                genre: musicAttributes.primaryGenre || 'Pop',
+                genre: musicAttributes.primaryGenre || track.artists[0]?.genres?.[0] || 'Unknown',
                 preview_url: track.preview_url,
                 external_url: track.external_urls.spotify,
                 spotify_id: track.id,
-                popularity: track.popularity,
-                duration_ms: track.duration_ms
+                popularity: track.popularity
             }));
 
-            console.log(`✅ Got ${recommendations.length} real Spotify recommendations`);
+            console.log('✅ Got recommendations:', recommendations.length);
             return recommendations;
 
         } catch (error) {
-            console.error('❌ Spotify API error, falling back to mock data:', error);
-            const isSpanishText = this.detectSpanish(userPreferences?.inputText || '');
-            return this.getMockRecommendations(sentimentScores, isSpanishText);
+            console.error('❌ Spotify API error:', error);
+            return this.getMockRecommendations(sentimentScores, false);
         }
+    }
+
+    // Get genres based on multiple preferred genres and emotion
+    getGenresFromPreferences(preferredGenres, emotion) {
+        const allGenres = new Set();
+        const genreWeights = new Map();
+        
+        // First pass: collect all genres and count their occurrences
+        preferredGenres.forEach(genre => {
+            const pool = this.getGenrePool(emotion, genre);
+            pool.genres.forEach(g => {
+                allGenres.add(g);
+                genreWeights.set(g, (genreWeights.get(g) || 0) + 1);
+            });
+        });
+
+        // Convert to array and sort by weight, then by name for stability
+        const weightedGenres = Array.from(allGenres)
+            .sort((a, b) => {
+                const weightDiff = (genreWeights.get(b) || 0) - (genreWeights.get(a) || 0);
+                return weightDiff !== 0 ? weightDiff : a.localeCompare(b);
+            });
+
+        // Return top 3 genres (Spotify limit)
+        return weightedGenres.slice(0, 3);
     }
 
     // Map sentiment scores to Spotify audio features
     mapSentimentToMusic(sentiment, userPreferences = null) {
+        // Debug input
+        console.log('🎯 Mapping sentiment to music:', {
+            sentiment,
+            hasPreferences: !!userPreferences,
+            preferredGenres: userPreferences?.preferredGenres
+        });
+
         // Get the dominant emotion
         const dominantEmotion = Object.keys(sentiment).reduce((a, b) =>
             sentiment[a] > sentiment[b] ? a : b
         );
 
-        // Calculate weighted attributes based on all emotions
+        // Initialize base values
         let valence = 0.5;
         let energy = 0.5;
         let danceability = 0.5;
-        let popularity = 40; // Lower default for more diverse music
+        let popularity = 50;
+        let genres = [];
+        let primaryGenre = '';
 
         // Weight each emotion's contribution
         valence = (sentiment.joy * 0.9 + sentiment.sadness * 0.1 + sentiment.anger * 0.2 + sentiment.fear * 0.3);
         energy = (sentiment.joy * 0.8 + sentiment.anger * 0.9 + sentiment.fear * 0.3 + sentiment.sadness * 0.4);
         danceability = (sentiment.joy * 0.8 + sentiment.anger * 0.6 + sentiment.sadness * 0.3 + sentiment.fear * 0.2);
 
-        // Detect language for genre selection
-        const isSpanish = this.detectSpanish(userPreferences?.inputText || '');
+        // Handle genre selection with strict genre matching
+        if (userPreferences?.preferredGenres && Array.isArray(userPreferences.preferredGenres)) {
+            const selectedGenres = userPreferences.preferredGenres.slice(0, 3);
+            console.log('🎸 Selected genres:', selectedGenres);            // Strict genre mappings for Spotify API
+            const genreMappings = {
+                'rock': ['rock'],
+                'country': ['country'],
+                'pop': ['pop'],
+                'indie': ['indie'],
+                'electronic': ['electronic'],
+                'jazz': ['jazz'],
+                'hip-hop': ['hip-hop'],
+                'latin': ['latin']
+            };
 
-        // Select genres based on dominant emotion, user preferences, and language
-        let genres = [];
-        let primaryGenre = '';
+            // Get primary genre-specific seeds
+            genres = selectedGenres.flatMap(genre => 
+                genreMappings[genre] || [genre]
+            ).filter(Boolean).slice(0, 3); // Ensure max 3 seeds
 
-        if (isSpanish) {
-            // Spanish/Latin music genres - using exact Spotify genre names
-            console.log(`🎵 Using Spanish/Latin genres for ${dominantEmotion}`);
-            switch (dominantEmotion) {
-                case 'joy':
-                    genres = ['reggaeton', 'latin', 'salsa', 'latin-pop','merengue', 'cumbia'];
-                    primaryGenre = 'Reggaeton';
-                    popularity = 60; // Higher for Latin hits
-                    break;
-                case 'sadness':
-                    genres = ['bachata', 'bolero', 'latin', 'ranchera'];
-                    primaryGenre = 'Bachata';
-                    popularity = 45;
-                    break;
-                case 'anger':
-                    genres = ['reggaeton', 'latin-rock', 'latin', 'rock en español'];
-                    primaryGenre = 'Latin Rock';
-                    popularity = 50;
-                    break;
-                case 'fear':
-                    genres = ['nueva-cancion', 'latin', 'folk'];
-                    primaryGenre = 'Nueva Canción';
-                    popularity = 35;
-                    break;
-                default:
-                    genres = ['latin', 'reggaeton', 'latin-pop'];
-                    primaryGenre = 'Latin';
-                    popularity = 55;
-            }
-        } else {
-            // Enhanced genre diversity for English
-            const genrePool = this.getGenrePool(dominantEmotion, userPreferences?.preferredGenre);
-            genres = genrePool.genres;
-            primaryGenre = genrePool.primaryGenre;
-            popularity = genrePool.popularity;
+            primaryGenre = selectedGenres[0];
+
+            // Apply genre-specific audio feature adjustments
+            const adjustments = {
+                valence: 0,
+                energy: 0,
+                danceability: 0,
+                popularity: 0
+            };
+
+            selectedGenres.forEach(genre => {
+                switch(genre) {
+                    case 'rock':
+                        adjustments.energy += 0.2;
+                        popularity += 5;
+                        break;
+                    case 'country':
+                        adjustments.valence += 0.1;
+                        adjustments.energy += 0.1;
+                        break;
+                    case 'pop':
+                        adjustments.danceability += 0.15;
+                        popularity += 10;
+                        break;
+                    case 'indie':
+                        popularity -= 10;
+                        break;
+                    case 'electronic':
+                        adjustments.energy += 0.15;
+                        adjustments.danceability += 0.2;
+                        break;
+                    case 'jazz':
+                        adjustments.energy -= 0.1;
+                        break;
+                    case 'hip-hop':
+                        adjustments.danceability += 0.2;
+                        adjustments.energy += 0.1;
+                        break;
+                    case 'latin':
+                        adjustments.danceability += 0.15;
+                        adjustments.valence += 0.1;
+                        break;
+                }
+            });
+
+            // Apply adjustments scaled by number of genres
+            const scale = 1 / selectedGenres.length;
+            valence = Math.max(0, Math.min(1, valence + adjustments.valence * scale));
+            energy = Math.max(0, Math.min(1, energy + adjustments.energy * scale));
+            danceability = Math.max(0, Math.min(1, danceability + adjustments.danceability * scale));
+            popularity = Math.max(0, Math.min(100, popularity + adjustments.popularity * scale));
         }
 
-        // Adjust audio features based on preferences
-        if (userPreferences?.preferredGenre === 'country') {
-            valence *= 0.8;
-            energy *= 0.7;
-            popularity = 35; // Less mainstream country
-        } else if (userPreferences?.preferredGenre === 'pop') {
-            energy *= 1.1;
-            danceability *= 1.1;
-            popularity = 55; // Moderately popular pop
-        } else if (userPreferences?.preferredGenre === 'hip-hop') {
-            energy *= 1.2;
-            danceability *= 1.3;
-            popularity = 45;
-        } else if (userPreferences?.preferredGenre === 'electronic') {
-            energy *= 1.1;
-            danceability *= 1.4;
-            popularity = 40;
-        } else if (userPreferences?.preferredGenre === 'indie') {
-            popularity = 25; // Very underground indie
-            valence *= 0.9;
-        } else if (userPreferences?.preferredGenre === 'jazz') {
-            popularity = 30;
-            danceability *= 0.7;
-        }
-
-        // Clamp values between 0 and 1
-        valence = Math.max(0, Math.min(1, valence));
-        energy = Math.max(0, Math.min(1, energy));
-        danceability = Math.max(0, Math.min(1, danceability));
+        // Debug output
+        console.log('🎼 Final music attributes:', {
+            genres,
+            primaryGenre,
+            valence: valence.toFixed(2),
+            energy: energy.toFixed(2),
+            danceability: danceability.toFixed(2),
+            popularity
+        });
 
         return {
-            genres: genres.slice(0, 3), // Spotify limit
+            genres,
             primaryGenre,
-            valence: parseFloat(valence.toFixed(2)),
-            energy: parseFloat(energy.toFixed(2)),
-            danceability: parseFloat(danceability.toFixed(2)),
-            popularity: Math.round(Math.max(5, Math.min(85, popularity))), // Ensure reasonable range
-            dominantEmotion,
-            isSpanish
+            valence,
+            energy,
+            danceability,
+            popularity
         };
     }
 

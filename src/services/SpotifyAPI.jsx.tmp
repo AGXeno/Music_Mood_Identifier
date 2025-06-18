@@ -1,0 +1,46 @@
+/* eslint-disable */
+import spotifyConfig from '../config/spotifyConfig';
+
+/**
+ * Service class for handling Spotify API interactions
+ * @class
+ */
+class SpotifyService {
+    constructor() {
+        /** @type {string|null} */
+        this.accessToken = null;
+        /** @type {number|null} */
+        this.tokenExpiry = null;
+        /** @type {string} */
+        this.baseUrl = spotifyConfig.apiBaseUrl;
+        /** @type {boolean} */
+        this.isUsingMockData = false;
+
+        // Debug logging for Spotify credentials
+        console.log('🔍 Checking Spotify credentials:', {
+            hasClientId: !!spotifyConfig.clientId,
+            clientIdLength: spotifyConfig.clientId?.length,
+            hasClientSecret: !!spotifyConfig.clientSecret,
+            clientSecretLength: spotifyConfig.clientSecret?.length,
+            baseUrl: this.baseUrl
+        });
+
+        // Check if we have valid Spotify credentials
+        if (!spotifyConfig.clientId || !spotifyConfig.clientSecret) {
+            console.warn('⚠️ Spotify credentials missing or invalid');
+            this.isUsingMockData = true;
+        }
+    }
+
+    /**
+     * Get Spotify access token using Client Credentials flow
+     * @returns {Promise<string|null>}
+     */
+    async getAccessToken() {
+        // ... rest of the code remains the same
+    }
+
+    // ... rest of the class implementation remains the same
+}
+
+export default SpotifyService;

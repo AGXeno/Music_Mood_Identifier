@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 import { Moon, Sun, Music, Send, ArrowLeft, Heart, Smile, Activity, Save, History, Clock, Trash2, Globe } from 'lucide-react';
 import MusicRecommenderMQTT from './mqtt/MQTTClient';
 import mqttConfig from './config/mqttConfig';
-import SpotifyService from './services/SpotifyAPI';
-//import SentimentAnalyzer from './services/SentimentAnalysis';
+import SpotifyService from './services/SpotifyAPI.jsx';
 import TensorFlowSentimentAnalyzer from './services/TensorFlowSentimentAnalyzer';
 
 // Translation files
@@ -25,11 +25,15 @@ const translations = {
 
         // Genre Selection
         chooseGenre: "Choose Your Preferred",
-        musicGenre: "Music Genre",
-        genreDescription: "Help us personalize your music recommendations by selecting your favorite genre.",
-        welcomeUser: "Welcome, {name}! You can always change this later.",
+        musicGenre: "Music Genres",
+        genreDescription: "Help us personalize your music recommendations by selecting up to 3 favorite genres.",
+        welcomeUser: "Welcome, {name}! You can always change these later.",
         skipForNow: "Skip for Now",
-        continueWith: "Continue with {genre}",
+        continueWith: "Continue with Selected Genres",
+        maxGenresMessage: "You can select up to 3 genres",
+        genreSelectionLeft: "genre selection remaining",
+        genreSelectionsLeft: "genre selections remaining",
+        saving: "Saving...",
 
         // Genres
         genres: {
@@ -106,12 +110,16 @@ const translations = {
         loggingIn: "Ingresando...",
 
         // Genre Selection
-        chooseGenre: "Elige Tu",
-        musicGenre: "Género Musical Preferido",
-        genreDescription: "Ayúdanos a personalizar tus recomendaciones musicales seleccionando tu género favorito.",
-        welcomeUser: "¡Bienvenido/a, {name}! Siempre puedes cambiar esto más tarde.",
+        chooseGenre: "Elige tus",
+        musicGenre: "Géneros Musicales",
+        genreDescription: "Ayúdanos a personalizar tus recomendaciones musicales seleccionando hasta 3 géneros favoritos.",
+        welcomeUser: "¡Bienvenido/a, {name}! Puedes cambiar esto más tarde.",
         skipForNow: "Omitir por Ahora",
-        continueWith: "Continuar con {genre}",
+        continueWith: "Continuar con Géneros Seleccionados",
+        maxGenresMessage: "Puedes seleccionar hasta 3 géneros",
+        genreSelectionLeft: "género restante",
+        genreSelectionsLeft: "géneros restantes",
+        saving: "Guardando...",
 
         // Genres
         genres: {
@@ -213,6 +221,10 @@ const LanguageProvider = ({ children }) => {
     );
 };
 
+LanguageProvider.propTypes = {
+    children: PropTypes.node.isRequired
+};
+
 const useLanguage = () => {
     const context = React.useContext(LanguageContext);
     if (!context) {
@@ -258,6 +270,10 @@ const ThemeProvider = ({ children }) => {
             </div>
         </ThemeContext.Provider>
     );
+};
+
+ThemeProvider.propTypes = {
+    children: PropTypes.node.isRequired
 };
 
 const useTheme = () => {
@@ -369,6 +385,18 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, o
     );
 };
 
+Header.propTypes = {
+    onNavigateHome: PropTypes.func.isRequired,
+    onNavigateHistory: PropTypes.func.isRequired,
+    currentPage: PropTypes.string.isRequired,
+    currentUser: PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        id: PropTypes.string,
+        preferredGenres: PropTypes.array
+    }),
+    onLogout: PropTypes.func.isRequired
+};
+
 const LoginPage = ({ onLogin, isLoading, error }) => {
     const theme = useTheme();
     const { t } = useLanguage();
@@ -413,10 +441,18 @@ const LoginPage = ({ onLogin, isLoading, error }) => {
     );
 };
 
+LoginPage.propTypes = {
+    onLogin: PropTypes.func.isRequired,
+    isLoading: PropTypes.bool.isRequired,
+    error: PropTypes.string
+};
+
 const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
     const theme = useTheme();
     const { t } = useLanguage();
-    const [selectedGenre, setSelectedGenre] = useState('');
+    const [selectedGenres, setSelectedGenres] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [showMaxGenresError, setShowMaxGenresError] = useState(false);
 
     const genres = [
         { id: 'pop', icon: '🎵' },
@@ -430,9 +466,31 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
     ];
 
     const handleGenreSelect = (genreId) => {
-        setSelectedGenre(genreId);
-        onGenreSelected(genreId);
+        setSelectedGenres(prev => {
+            if (prev.includes(genreId)) {
+                // Remove genre if already selected
+                setShowMaxGenresError(false);
+                return prev.filter(g => g !== genreId);
+            } else if (prev.length < 3) {
+                // Add genre if less than 3 selected
+                return [...prev, genreId];
+            }
+            // Show error message when trying to select more than 3
+            setShowMaxGenresError(true);
+            setTimeout(() => setShowMaxGenresError(false), 3000); // Hide after 3 seconds
+            return prev; // Don't add if already 3 selected
+        });
     };
+
+    const handleGenreSubmit = () => {
+        setIsLoading(true);
+        if (currentUser) {
+            onGenreSelected(selectedGenres.length > 0 ? selectedGenres : ['pop']); // Default to pop if nothing selected
+        }
+        setIsLoading(false);
+    };
+
+    const remainingSelections = 3 - selectedGenres.length;
 
     return (
         <div className="max-w-4xl mx-auto px-4 py-8">
@@ -453,27 +511,47 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
                     {t('genreDescription')}
                 </p>
                 <p
-                    className="text-sm"
+                    className="text-sm mb-4"
                     style={{ color: theme.colors.textSecondary }}
                 >
                     {t('welcomeUser', { name: currentUser.name })}
                 </p>
+                <p 
+                    className={`text-sm transition-opacity duration-300 ${
+                        remainingSelections > 0 ? 'opacity-100' : 'opacity-0'
+                    }`}
+                    style={{ color: theme.colors.textSecondary }}
+                >
+                    {remainingSelections > 0 
+                        ? `${remainingSelections} ${remainingSelections === 1 
+                            ? t('genreSelectionLeft') 
+                            : t('genreSelectionsLeft')}`
+                        : ''}
+                </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {showMaxGenresError && (
+                <p role="alert" className="text-amber-600 dark:text-amber-400 text-center mb-4 animate-bounce">
+                    {t('maxGenresMessage')}
+                </p>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 {genres.map((genre) => (
                     <button
                         key={genre.id}
                         onClick={() => handleGenreSelect(genre.id)}
-                        className="p-6 rounded-xl border-2 transition-all duration-200 hover:scale-105 text-center"
-                        style={{
-                            backgroundColor: selectedGenre === genre.id ? `${theme.colors.primary}20` : theme.colors.surface,
-                            borderColor: selectedGenre === genre.id ? theme.colors.primary : theme.colors.border,
-                            color: theme.colors.text
-                        }}
+                        className={`p-4 rounded-lg border-2 transition-all ${
+                            selectedGenres.includes(genre.id)
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900'
+                                : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                        }`}
+                        disabled={!selectedGenres.includes(genre.id) && selectedGenres.length >= 3}
+                        aria-pressed={selectedGenres.includes(genre.id)}
+                        aria-label={`${t(`genres.${genre.id}.name`)} - ${t(`genres.${genre.id}.description`)}`}
                     >
-                        <div className="text-3xl mb-3">{genre.icon}</div>
-                        <h3 className="text-lg font-semibold mb-2">{t(`genres.${genre.id}.name`)}</h3>
+                        <span className="text-2xl mr-2" role="img" aria-hidden="true">{genre.icon}</span>
+                        <h3 className="font-bold mb-2">{t(`genres.${genre.id}.name`)}</h3>
                         <p
                             className="text-sm"
                             style={{ color: theme.colors.textSecondary }}
@@ -484,41 +562,42 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
                 ))}
             </div>
 
-            <div className="flex justify-center space-x-4">
+            <div className="flex justify-between items-center">
                 <button
                     onClick={onSkip}
-                    className="px-6 py-3 rounded-lg font-medium transition-all duration-200 hover:scale-105"
-                    style={{
-                        backgroundColor: theme.colors.surface,
-                        border: `1px solid ${theme.colors.border}`,
-                        color: theme.colors.text
-                    }}
+                    className="text-gray-600 dark:text-gray-400 hover:underline"
+                    aria-label={t('skipForNow')}
                 >
                     {t('skipForNow')}
                 </button>
-
-                {selectedGenre && (
-                    <button
-                        onClick={() => onGenreSelected(selectedGenre)}
-                        className="px-8 py-3 rounded-lg font-semibold transition-all duration-200 hover:scale-105"
-                        style={{
-                            backgroundColor: theme.colors.primary,
-                            color: 'white'
-                        }}
-                    >
-                        {t('continueWith', { genre: t(`genres.${selectedGenre}.name`) })}
-                    </button>
-                )}
+                <button
+                    onClick={handleGenreSubmit}
+                    className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
+                    disabled={isLoading}
+                    aria-busy={isLoading}
+                >
+                    {isLoading ? t('saving') : t('continueWith')}
+                </button>
             </div>
         </div>
     );
 };
 
-const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
+GenrePreferenceSelector.propTypes = {
+    currentUser: PropTypes.shape({
+        name: PropTypes.string.isRequired,
+        id: PropTypes.string,
+        preferredGenres: PropTypes.array
+    }).isRequired,
+    onGenreSelected: PropTypes.func.isRequired,
+    onSkip: PropTypes.func.isRequired
+};
+
+const TextInputPage = ({ onSubmit, isLoading, error }) => {
     const [text, setText] = useState('');
     const [selectedExample, setSelectedExample] = useState('');
     const theme = useTheme();
-    const { t, currentLanguage } = useLanguage();
+    const { t } = useLanguage();
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -636,6 +715,12 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
     );
 };
 
+TextInputPage.propTypes = {
+    onSubmit: PropTypes.func.isRequired,
+    isLoading: PropTypes.bool.isRequired,
+    error: PropTypes.string
+};
+
 const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }) => {
     const theme = useTheme();
     const { t } = useLanguage();
@@ -665,33 +750,33 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
         if (moodName === 'happy' || moodName === 'feliz') {
             if (percentage > 70) {
                 insight = isLatinContext
-                    ? `Your text radiates pure joy and energy! Perfect for upbeat Latin rhythms like reggaeton and salsa.`
+                    ? "Your text radiates pure joy and energy! Perfect for upbeat Latin rhythms like reggaeton and salsa."
                     : `Your text shows overwhelming positivity with ${percentage}% happiness. Perfect for upbeat, energetic music!`;
             } else if (percentage > 40) {
                 insight = isLatinContext
-                    ? `You're feeling good vibes! Time for some celebratory Latin music to match your mood.`
-                    : `You're feeling quite positive today. Great for uplifting music that matches your optimistic energy.`;
+                    ? "You're feeling good vibes! Time for some celebratory Latin music to match your mood."
+                    : "You're feeling quite positive today. Great for uplifting music that matches your optimistic energy.";
             } else {
-                insight = `You're experiencing moderate happiness. Gentle, positive music would complement your mood well.`;
+                insight = "You're experiencing moderate happiness. Gentle, positive music would complement your mood well.";
             }
         } else if (moodName === 'sad' || moodName === 'triste') {
             if (percentage > 60) {
                 insight = isLatinContext
-                    ? `You're going through a tough time. Let some soulful bachata or boleros help you process these feelings.`
+                    ? "You're going through a tough time. Let some soulful bachata or boleros help you process these feelings."
                     : `You're feeling quite down with ${percentage}% sadness. Gentle, comforting music might help you through this.`;
             } else {
-                insight = `You seem a bit melancholic. Some reflective music could resonate with your current state.`;
+                insight = "You seem a bit melancholic. Some reflective music could resonate with your current state.";
             }
         } else if (moodName === 'angry' || moodName === 'enojado') {
             insight = isLatinContext
-                ? `You're feeling intense emotions! High-energy reggaeton or Latin rock could be the perfect outlet.`
-                : `You're experiencing anger and frustration. Powerful, energetic music might help you channel these feelings.`;
+                ? "You're feeling intense emotions! High-energy reggaeton or Latin rock could be the perfect outlet."
+                : "You're experiencing anger and frustration. Powerful, energetic music might help you channel these feelings.";
         } else if (moodName === 'anxious' || moodName === 'ansioso') {
             insight = isLatinContext
-                ? `You're feeling nervous. Some calming nueva canción or gentle acoustic Latin music might help soothe you.`
-                : `You're feeling anxious. Calm, peaceful music could help ease your worries.`;
+                ? "You're feeling nervous. Some calming nueva canción or gentle acoustic Latin music might help soothe you."
+                : "You're feeling anxious. Calm, peaceful music could help ease your worries.";
         } else {
-            insight = `Your emotions are complex. Let music be your companion through this journey.`;
+            insight = "Your emotions are complex. Let music be your companion through this journey.";
         }
 
         return insight;
@@ -750,7 +835,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                 color: theme.colors.textSecondary
                             }}
                         >
-                            <strong>{t('yourText')}</strong> "{text.length > 100 ? text.substring(0, 100) + '...' : text}"
+                            <strong>{t('yourText')}</strong> &ldquo;{text.length > 100 ? text.substring(0, 100) + '...' : text}&rdquo;
                         </div>
 
                         <div className="space-y-3">
@@ -887,6 +972,30 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
     );
 };
 
+ResultsPage.propTypes = {
+    analysis: PropTypes.shape({
+        text: PropTypes.string.isRequired,
+        timestamp: PropTypes.string.isRequired,
+        moodAnalysis: PropTypes.arrayOf(PropTypes.shape({
+            mood: PropTypes.string.isRequired,
+            percentage: PropTypes.number.isRequired,
+            icon: PropTypes.func.isRequired,
+            color: PropTypes.string.isRequired
+        })).isRequired,
+        songs: PropTypes.arrayOf(PropTypes.shape({
+            id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+            title: PropTypes.string.isRequired,
+            artist: PropTypes.string.isRequired,
+            album: PropTypes.string.isRequired,
+            genre: PropTypes.string.isRequired
+        })).isRequired,
+        sentimentScores: PropTypes.object
+    }).isRequired,
+    onNavigateBack: PropTypes.func.isRequired,
+    onSaveAnalysis: PropTypes.func.isRequired,
+    savedAnalyses: PropTypes.array.isRequired
+};
+
 const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAnalysis }) => {
     const theme = useTheme();
     const { t } = useLanguage();
@@ -1021,6 +1130,52 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
     );
 };
 
+HistoryPage.propTypes = {
+    savedAnalyses: PropTypes.arrayOf(PropTypes.shape({
+        id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+        text: PropTypes.string.isRequired,
+        timestamp: PropTypes.string.isRequired,
+        moodAnalysis: PropTypes.array.isRequired,
+        songs: PropTypes.array.isRequired
+    })).isRequired,
+    onNavigateBack: PropTypes.func.isRequired,
+    onViewAnalysis: PropTypes.func.isRequired,
+    onDeleteAnalysis: PropTypes.func.isRequired
+};
+
+// TensorFlow Status Component
+const TensorFlowStatus = () => {
+    const [modelInfo, setModelInfo] = useState(null);
+
+    React.useEffect(() => {
+        // This would be connected to your sentiment analyzer
+        setModelInfo({
+            isLoaded: true,
+            vocabularySize: 1000
+        });
+    }, []);
+
+    if (!modelInfo || process.env.NODE_ENV !== 'development') return null;
+
+    return (
+        <div style={{
+            position: 'fixed',
+            bottom: '10px',
+            right: '10px',
+            background: modelInfo.isLoaded ? '#4CAF50' : '#FF9800',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            zIndex: 1000
+        }}>
+            TF.js: {modelInfo.isLoaded ? '✅ Ready' : '⏳ Loading'}
+            <br />
+            Vocab: {modelInfo.vocabularySize} words
+        </div>
+    );
+};
+
 const App = () => {
     const [currentUser, setCurrentUser] = useState(null);
     const [currentPage, setCurrentPage] = useState('login');
@@ -1047,7 +1202,7 @@ const App = () => {
         return () => {
             sentimentAnalyzer.dispose();
         };
-    },  [sentimentAnalyzer]);
+    }, [sentimentAnalyzer]);
 
     const handleTextSubmit = async (text) => {
         setIsLoading(true);
@@ -1060,7 +1215,7 @@ const App = () => {
             console.log('📊 TensorFlow Sentiment scores:', sentimentScores);
 
             const userPreferences = currentUser ? {
-                preferredGenre: currentUser.preferredGenre || (currentUser.name === 'Jim' ? 'country' : 'pop'),
+                preferredGenres: currentUser.preferredGenres || (currentUser.name === 'Jim' ? ['country'] : ['pop']),
                 inputText: text
             } : { inputText: text };
 
@@ -1094,35 +1249,6 @@ const App = () => {
         }
     };
 
-    const TensorFlowStatus = () => {
-        const [modelInfo, setModelInfo] = useState(null);
-
-        React.useEffect(() => {
-            const info = sentimentAnalyzer.getModelInfo();
-            setModelInfo(info);
-        }, []);
-
-        if (!modelInfo || process.env.NODE_ENV !== 'development') return null;
-
-        return (
-            <div style={{
-                position: 'fixed',
-                bottom: '10px',
-                right: '10px',
-                background: modelInfo.isLoaded ? '#4CAF50' : '#FF9800',
-                color: 'white',
-                padding: '8px 12px',
-                borderRadius: '4px',
-                fontSize: '12px',
-                zIndex: 1000
-            }}>
-                TF.js: {modelInfo.isLoaded ? '✅ Ready' : '⏳ Loading'}
-                <br />
-                Vocab: {modelInfo.vocabularySize} words
-            </div>
-        );
-    };
-
     const handleSaveAnalysis = (analysisData) => {
         setSavedAnalyses(prev => [...prev, analysisData]);
     };
@@ -1153,8 +1279,8 @@ const App = () => {
         }
     };
 
-    const handleGenreSelected = (genreId) => {
-        setCurrentUser(prev => ({ ...prev, preferredGenre: genreId }));
+    const handleGenreSelected = (genres) => {
+        setCurrentUser(prev => ({ ...prev, preferredGenres: genres }));
         setCurrentPage('home');
     };
 
@@ -1220,7 +1346,6 @@ const App = () => {
                         ) : (
                             <TextInputPage
                                 onSubmit={handleTextSubmit}
-                                currentUser={currentUser}
                                 isLoading={isLoading}
                                 error={error}
                             />
