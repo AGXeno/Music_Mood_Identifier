@@ -1,9 +1,225 @@
 import React, { useState } from 'react';
-import { Moon, Sun, Music, Send, ArrowLeft, Heart, Smile, Activity, Save, History, Clock, Trash2 } from 'lucide-react';
+import { Moon, Sun, Music, Send, ArrowLeft, Heart, Smile, Activity, Save, History, Clock, Trash2, Globe } from 'lucide-react';
 import MusicRecommenderMQTT from './mqtt/MQTTClient';
 import mqttConfig from './config/mqttConfig';
 import SpotifyService from './services/SpotifyAPI';
-import SentimentAnalyzer from './services/SentimentAnalysis';
+//import SentimentAnalyzer from './services/SentimentAnalysis';
+import TensorFlowSentimentAnalyzer from './services/TensorFlowSentimentAnalyzer';
+
+// Translation files
+const translations = {
+    en: {
+        // Header
+        appTitle: "MoodTunes",
+        appSubtitle: "AI-Powered Music Recommendations",
+        loggedInAs: "Logged in as",
+        logout: "Logout",
+        history: "History",
+        backToHome: "Back to Home",
+
+        // Login Page
+        loginTitle: "Login to MoodTunes",
+        loginAsJim: "Login as Jim",
+        loginAsStephanie: "Login as Stephanie",
+        loggingIn: "Logging in...",
+
+        // Genre Selection
+        chooseGenre: "Choose Your Preferred",
+        musicGenre: "Music Genre",
+        genreDescription: "Help us personalize your music recommendations by selecting your favorite genre.",
+        welcomeUser: "Welcome, {name}! You can always change this later.",
+        skipForNow: "Skip for Now",
+        continueWith: "Continue with {genre}",
+
+        // Genres
+        genres: {
+            pop: { name: "Pop", description: "Mainstream, catchy, popular music" },
+            indie: { name: "Indie", description: "Alternative, underground, artistic" },
+            "hip-hop": { name: "Hip-Hop", description: "Rap, urban, rhythmic beats" },
+            electronic: { name: "Electronic", description: "EDM, house, techno, synth" },
+            jazz: { name: "Jazz", description: "Smooth, sophisticated, improvised" },
+            country: { name: "Country", description: "Folk, americana, southern" },
+            latin: { name: "Latin", description: "Reggaeton, salsa, bachata" },
+            rock: { name: "Rock", description: "Guitar-driven, energetic" }
+        },
+
+        // Text Input Page
+        discoverMusic: "Discover Music Based on Your",
+        mood: "Mood",
+        moodDescription: "Share your thoughts, feelings, or what's on your mind. Our AI will analyze your text and recommend the perfect songs to match your mood.",
+        tellUsFeelings: "Tell us how you're feeling or what's on your mind",
+        textPlaceholder: "Express your thoughts, emotions, or describe your current situation...",
+        analyzing: "Analyzing...",
+        analyzeButton: "Analyze & Get Recommendations",
+        needInspiration: "Need inspiration? Try one of these examples:",
+        error: "Error:",
+
+        // Examples
+        examples: [
+            "I'm feeling nostalgic today, thinking about old memories and simpler times.",
+            "Just got promoted at work! I'm so excited and energized right now!",
+            "Had a rough day at work, feeling stressed and need something to calm down.",
+            "It's a beautiful sunny morning and I'm ready to conquer the world!",
+            "Missing my best friend who moved away last month. Feeling a bit lonely.",
+            "Celebrating my anniversary with my partner. Love is in the air!"
+        ],
+
+        // Results Page
+        analyzeNewText: "Analyze New Text",
+        moodAnalysis: "Mood Analysis",
+        yourText: "Your Text:",
+        aiInsight: "AI Insight:",
+        recommendedSongs: "Recommended Songs",
+        songsDescription: "Based on your mood analysis, here are 10 songs perfectly matched to your current vibe:",
+        saved: "Saved",
+        saveAnalysis: "Save Analysis",
+        discoverMore: "Discover More Music",
+
+        // Moods
+        moods: {
+            Happy: "Happy",
+            Sad: "Sad",
+            Angry: "Angry",
+            Anxious: "Anxious"
+        },
+
+        // History Page
+        yourSavedAnalyses: "Your Saved Analyses",
+        noSavedAnalyses: "No Saved Analyses",
+        noSavedDescription: "Start analyzing your mood and save your results to see them here!",
+        viewAnalysis: "View Analysis",
+        songs: "songs"
+    },
+    es: {
+        // Header
+        appTitle: "MoodTunes",
+        appSubtitle: "Recomendaciones Musicales con IA",
+        loggedInAs: "Conectado como",
+        logout: "Cerrar Sesión",
+        history: "Historial",
+        backToHome: "Volver al Inicio",
+
+        // Login Page
+        loginTitle: "Ingresar a MoodTunes",
+        loginAsJim: "Ingresar como Jim",
+        loginAsStephanie: "Ingresar como Stephanie",
+        loggingIn: "Ingresando...",
+
+        // Genre Selection
+        chooseGenre: "Elige Tu",
+        musicGenre: "Género Musical Preferido",
+        genreDescription: "Ayúdanos a personalizar tus recomendaciones musicales seleccionando tu género favorito.",
+        welcomeUser: "¡Bienvenido/a, {name}! Siempre puedes cambiar esto más tarde.",
+        skipForNow: "Omitir por Ahora",
+        continueWith: "Continuar con {genre}",
+
+        // Genres
+        genres: {
+            pop: { name: "Pop", description: "Música popular, pegadiza, mainstream" },
+            indie: { name: "Indie", description: "Alternativo, underground, artístico" },
+            "hip-hop": { name: "Hip-Hop", description: "Rap, urbano, ritmos pegadizos" },
+            electronic: { name: "Electrónica", description: "EDM, house, techno, sintetizadores" },
+            jazz: { name: "Jazz", description: "Suave, sofisticado, improvisado" },
+            country: { name: "Country", description: "Folk, americana, sureño" },
+            latin: { name: "Latino", description: "Reggaeton, salsa, bachata" },
+            rock: { name: "Rock", description: "Guitarra protagonista, energético" }
+        },
+
+        // Text Input Page
+        discoverMusic: "Descubre Música Basada en Tu",
+        mood: "Estado de Ánimo",
+        moodDescription: "Comparte tus pensamientos, sentimientos o lo que tienes en mente. Nuestra IA analizará tu texto y recomendará las canciones perfectas para tu estado de ánimo.",
+        tellUsFeelings: "Cuéntanos cómo te sientes o qué tienes en mente",
+        textPlaceholder: "Expresa tus pensamientos, emociones o describe tu situación actual...",
+        analyzing: "Analizando...",
+        analyzeButton: "Analizar y Obtener Recomendaciones",
+        needInspiration: "¿Necesitas inspiración? Prueba uno de estos ejemplos:",
+        error: "Error:",
+
+        // Examples
+        examples: [
+            "Me siento nostálgico hoy, pensando en viejos recuerdos y tiempos más simples.",
+            "¡Me ascendieron en el trabajo! ¡Estoy muy emocionado y lleno de energía!",
+            "Tuve un día difícil en el trabajo, me siento estresado y necesito algo para calmarme.",
+            "¡Es una hermosa mañana soleada y estoy listo para conquistar el mundo!",
+            "Extraño a mi mejor amigo que se mudó el mes pasado. Me siento un poco solo.",
+            "¡Celebrando mi aniversario con mi pareja. El amor está en el aire!"
+        ],
+
+        // Results Page
+        analyzeNewText: "Analizar Nuevo Texto",
+        moodAnalysis: "Análisis de Estado de Ánimo",
+        yourText: "Tu Texto:",
+        aiInsight: "Perspectiva de IA:",
+        recommendedSongs: "Canciones Recomendadas",
+        songsDescription: "Basado en tu análisis de estado de ánimo, aquí tienes 10 canciones perfectamente adaptadas a tu vibra actual:",
+        saved: "Guardado",
+        saveAnalysis: "Guardar Análisis",
+        discoverMore: "Descubrir Más Música",
+
+        // Moods
+        moods: {
+            Happy: "Feliz",
+            Sad: "Triste",
+            Angry: "Enojado",
+            Anxious: "Ansioso"
+        },
+
+        // History Page
+        yourSavedAnalyses: "Tus Análisis Guardados",
+        noSavedAnalyses: "Sin Análisis Guardados",
+        noSavedDescription: "¡Comienza analizando tu estado de ánimo y guarda tus resultados para verlos aquí!",
+        viewAnalysis: "Ver Análisis",
+        songs: "canciones"
+    }
+};
+
+// Language Context
+const LanguageContext = React.createContext();
+
+const LanguageProvider = ({ children }) => {
+    const [currentLanguage, setCurrentLanguage] = useState('en');
+
+    const toggleLanguage = () => {
+        setCurrentLanguage(prev => prev === 'en' ? 'es' : 'en');
+    };
+
+    const t = (key, replacements = {}) => {
+        const keys = key.split('.');
+        let value = translations[currentLanguage];
+
+        for (const k of keys) {
+            value = value?.[k];
+        }
+
+        if (!value) {
+            console.warn(`Translation missing for key: ${key} in language: ${currentLanguage}`);
+            return key;
+        }
+
+        // Replace placeholders like {name}, {genre}
+        let result = value;
+        Object.entries(replacements).forEach(([placeholder, replacement]) => {
+            result = result.replace(`{${placeholder}}`, replacement);
+        });
+
+        return result;
+    };
+
+    return (
+        <LanguageContext.Provider value={{ currentLanguage, toggleLanguage, t }}>
+            {children}
+        </LanguageContext.Provider>
+    );
+};
+
+const useLanguage = () => {
+    const context = React.useContext(LanguageContext);
+    if (!context) {
+        throw new Error('useLanguage must be used within a LanguageProvider');
+    }
+    return context;
+};
 
 const ThemeContext = React.createContext();
 
@@ -54,13 +270,14 @@ const useTheme = () => {
 
 const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, onLogout }) => {
     const theme = useTheme();
+    const { currentLanguage, toggleLanguage, t } = useLanguage();
 
     return (
         <header className="border-b transition-colors duration-300 sticky top-0 z-50 backdrop-blur-sm"
-            style={{
-                borderColor: theme.colors.border,
-                backgroundColor: `${theme.colors.background}95`
-            }}>
+                style={{
+                    borderColor: theme.colors.border,
+                    backgroundColor: `${theme.colors.background}95`
+                }}>
             <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
                 <div
                     className="flex items-center space-x-3 cursor-pointer"
@@ -73,19 +290,21 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, o
                         <Music className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold">MoodTunes</h1>
+                        <h1 className="text-xl font-bold">{t('appTitle')}</h1>
                         <p
                             className="text-sm"
                             style={{ color: theme.colors.textSecondary }}
                         >
-                            AI-Powered Music Recommendations
+                            {t('appSubtitle')}
                         </p>
                     </div>
-                </div>                <div className="flex items-center space-x-2">
+                </div>
+
+                <div className="flex items-center space-x-2">
                     {currentUser && (
                         <>
                             <div className="text-sm mr-4" style={{ color: theme.colors.textSecondary }}>
-                                Logged in as <span className="font-semibold">{currentUser.name}</span>
+                                {t('loggedInAs')} <span className="font-semibold">{currentUser.name}</span>
                             </div>
                             <button
                                 onClick={onLogout}
@@ -96,7 +315,7 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, o
                                     color: theme.colors.text
                                 }}
                             >
-                                <span className="text-sm">Logout</span>
+                                <span className="text-sm">{t('logout')}</span>
                             </button>
                         </>
                     )}
@@ -111,9 +330,24 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, o
                             }}
                         >
                             <History className="w-5 h-5" />
-                            <span className="hidden sm:inline text-sm">History</span>
+                            <span className="hidden sm:inline text-sm">{t('history')}</span>
                         </button>
                     )}
+
+                    {/* Language Toggle Button */}
+                    <button
+                        onClick={toggleLanguage}
+                        className="p-2 rounded-lg transition-all duration-200 hover:scale-105 flex items-center space-x-1"
+                        style={{
+                            backgroundColor: theme.colors.surface,
+                            border: `1px solid ${theme.colors.border}`,
+                            color: theme.colors.text
+                        }}
+                        title={currentLanguage === 'en' ? 'Switch to Spanish' : 'Cambiar a inglés'}
+                    >
+                        <Globe className="w-4 h-4" />
+                        <span className="text-sm font-medium">{currentLanguage.toUpperCase()}</span>
+                    </button>
 
                     <button
                         onClick={theme.toggleTheme}
@@ -137,18 +371,19 @@ const Header = ({ onNavigateHome, onNavigateHistory, currentPage, currentUser, o
 
 const LoginPage = ({ onLogin, isLoading, error }) => {
     const theme = useTheme();
-    
+    const { t } = useLanguage();
+
     return (
         <div className="max-w-md mx-auto mt-20 p-6 rounded-xl"
-            style={{ backgroundColor: theme.colors.surface, border: `1px solid ${theme.colors.border}` }}>
-            <h2 className="text-2xl font-bold mb-6">Login to MoodTunes</h2>
-            
+             style={{ backgroundColor: theme.colors.surface, border: `1px solid ${theme.colors.border}` }}>
+            <h2 className="text-2xl font-bold mb-6">{t('loginTitle')}</h2>
+
             {error && (
                 <div className="mb-4 p-3 rounded bg-red-100 text-red-700 border border-red-200">
                     {error}
                 </div>
             )}
-            
+
             <div className="space-y-4">
                 <button
                     onClick={() => onLogin('jim')}
@@ -159,9 +394,9 @@ const LoginPage = ({ onLogin, isLoading, error }) => {
                         color: '#ffffff'
                     }}
                 >
-                    {isLoading ? 'Logging in...' : 'Login as Jim'}
+                    {isLoading ? t('loggingIn') : t('loginAsJim')}
                 </button>
-                
+
                 <button
                     onClick={() => onLogin('stephanie')}
                     disabled={isLoading}
@@ -171,7 +406,7 @@ const LoginPage = ({ onLogin, isLoading, error }) => {
                         color: '#ffffff'
                     }}
                 >
-                    {isLoading ? 'Logging in...' : 'Login as Stephanie'}
+                    {isLoading ? t('loggingIn') : t('loginAsStephanie')}
                 </button>
             </div>
         </div>
@@ -180,17 +415,18 @@ const LoginPage = ({ onLogin, isLoading, error }) => {
 
 const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
     const theme = useTheme();
+    const { t } = useLanguage();
     const [selectedGenre, setSelectedGenre] = useState('');
 
     const genres = [
-        { id: 'pop', name: 'Pop', description: 'Mainstream, catchy, popular music', icon: '🎵' },
-        { id: 'indie', name: 'Indie', description: 'Alternative, underground, artistic', icon: '🎸' },
-        { id: 'hip-hop', name: 'Hip-Hop', description: 'Rap, urban, rhythmic beats', icon: '🎤' },
-        { id: 'electronic', name: 'Electronic', description: 'EDM, house, techno, synth', icon: '🎛️' },
-        { id: 'jazz', name: 'Jazz', description: 'Smooth, sophisticated, improvised', icon: '🎺' },
-        { id: 'country', name: 'Country', description: 'Folk, americana, southern', icon: '🤠' },
-        { id: 'latin', name: 'Latin', description: 'Reggaeton, salsa, bachata', icon: '💃' },
-        { id: 'rock', name: 'Rock', description: 'Guitar-driven, energetic', icon: '🤘' }
+        { id: 'pop', icon: '🎵' },
+        { id: 'indie', icon: '🎸' },
+        { id: 'hip-hop', icon: '🎤' },
+        { id: 'electronic', icon: '🎛️' },
+        { id: 'jazz', icon: '🎺' },
+        { id: 'country', icon: '🤠' },
+        { id: 'latin', icon: '💃' },
+        { id: 'rock', icon: '🤘' }
     ];
 
     const handleGenreSelect = (genreId) => {
@@ -202,25 +438,25 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
         <div className="max-w-4xl mx-auto px-4 py-8">
             <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold mb-4">
-                    Choose Your Preferred 
+                    {t('chooseGenre')}
                     <span
                         className="ml-2"
                         style={{ color: theme.colors.primary }}
                     >
-                        Music Genre
+                        {t('musicGenre')}
                     </span>
                 </h2>
                 <p
                     className="text-lg max-w-2xl mx-auto mb-4"
                     style={{ color: theme.colors.textSecondary }}
                 >
-                    Help us personalize your music recommendations by selecting your favorite genre.
+                    {t('genreDescription')}
                 </p>
                 <p
                     className="text-sm"
                     style={{ color: theme.colors.textSecondary }}
                 >
-                    Welcome, <strong>{currentUser.name}</strong>! You can always change this later.
+                    {t('welcomeUser', { name: currentUser.name })}
                 </p>
             </div>
 
@@ -237,12 +473,12 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
                         }}
                     >
                         <div className="text-3xl mb-3">{genre.icon}</div>
-                        <h3 className="text-lg font-semibold mb-2">{genre.name}</h3>
-                        <p 
+                        <h3 className="text-lg font-semibold mb-2">{t(`genres.${genre.id}.name`)}</h3>
+                        <p
                             className="text-sm"
                             style={{ color: theme.colors.textSecondary }}
                         >
-                            {genre.description}
+                            {t(`genres.${genre.id}.description`)}
                         </p>
                     </button>
                 ))}
@@ -258,9 +494,9 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
                         color: theme.colors.text
                     }}
                 >
-                    Skip for Now
+                    {t('skipForNow')}
                 </button>
-                
+
                 {selectedGenre && (
                     <button
                         onClick={() => onGenreSelected(selectedGenre)}
@@ -270,7 +506,7 @@ const GenrePreferenceSelector = ({ currentUser, onGenreSelected, onSkip }) => {
                             color: 'white'
                         }}
                     >
-                        Continue with {genres.find(g => g.id === selectedGenre)?.name}
+                        {t('continueWith', { genre: t(`genres.${selectedGenre}.name`) })}
                     </button>
                 )}
             </div>
@@ -282,37 +518,7 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
     const [text, setText] = useState('');
     const [selectedExample, setSelectedExample] = useState('');
     const theme = useTheme();
-
-    // Customize examples based on user preferences
-    const examples = currentUser ? [
-        `I'm in the mood for some ${currentUser.preferredGenre || 'great'} music today!`,
-        "Just got promoted at work! I'm so excited and energized right now!",
-        "Had a rough day at work, feeling stressed and need something to calm down.",
-        "It's a beautiful sunny morning and I'm ready to conquer the world!",
-        "Missing my best friend who moved away last month. Feeling a bit lonely.",
-        "Celebrating my anniversary with my partner. Love is in the air!",
-        
-        // Spanish examples for Latin music testing
-        "¡Estoy súper feliz hoy! Quiero celebrar con música alegre.",
-        "Me siento un poco triste, necesito canciones que me levanten el ánimo.",
-        "¡Tengo ganas de bailar! Dame reggaeton y salsa.",
-        "Estoy nostálgico, extraño mi país y mi familia.",
-        "Muy enojado con la situación, necesito música para desahogarme.",
-        "Me siento nervioso por la entrevista de mañana."
-    ] : [
-        "I'm feeling nostalgic today, thinking about old memories and simpler times.",
-        "Just got promoted at work! I'm so excited and energized right now!",
-        "Had a rough day at work, feeling stressed and need something to calm down.",
-        "It's a beautiful sunny morning and I'm ready to conquer the world!",
-        "Missing my best friend who moved away last month. Feeling a bit lonely.",
-        "Celebrating my anniversary with my partner. Love is in the air!",
-        
-        // Spanish examples for testing
-        "¡Estoy muy feliz hoy! Quiero música latina para bailar.",
-        "Me siento triste, necesito bachata o boleros.",
-        "Tengo mucha energía, dame reggaeton!",
-        "Estoy enojado, quiero rock en español."
-    ];
+    const { t, currentLanguage } = useLanguage();
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -326,29 +532,32 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
         setSelectedExample(example);
     };
 
+    // Get examples for current language
+    const examples = t('examples');
+
     return (
         <div className="max-w-4xl mx-auto px-4 py-8">
             <div className="text-center mb-8">
                 <h2 className="text-3xl font-bold mb-4">
-                    Discover Music Based on Your
+                    {t('discoverMusic')}
                     <span
                         className="ml-2"
                         style={{ color: theme.colors.primary }}
                     >
-            Mood
-          </span>
+                        {t('mood')}
+                    </span>
                 </h2>
                 <p
                     className="text-lg max-w-2xl mx-auto"
                     style={{ color: theme.colors.textSecondary }}
                 >
-                    Share your thoughts, feelings, or what's on your mind. Our AI will analyze your text and recommend the perfect songs to match your mood.
+                    {t('moodDescription')}
                 </p>
             </div>
 
             {error && (
                 <div className="mb-6 p-4 rounded-lg bg-red-100 border border-red-300 text-red-700">
-                    <strong>Error:</strong> {error}
+                    <strong>{t('error')}</strong> {error}
                 </div>
             )}
 
@@ -358,13 +567,13 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
                         htmlFor="text-input"
                         className="block text-sm font-medium mb-2"
                     >
-                        Tell us how you're feeling or what's on your mind
+                        {t('tellUsFeelings')}
                     </label>
                     <textarea
                         id="text-input"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder="Express your thoughts, emotions, or describe your current situation..."
+                        placeholder={t('textPlaceholder')}
                         rows={6}
                         className="w-full rounded-xl p-4 text-base transition-all duration-200 focus:outline-none focus:ring-2 resize-none"
                         style={{
@@ -390,12 +599,12 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
                         {isLoading ? (
                             <>
                                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                                <span>Analyzing...</span>
+                                <span>{t('analyzing')}</span>
                             </>
                         ) : (
                             <>
                                 <Send className="w-5 h-5" />
-                                <span>Analyze & Get Recommendations</span>
+                                <span>{t('analyzeButton')}</span>
                             </>
                         )}
                     </button>
@@ -404,7 +613,7 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
 
             <div className="mt-12">
                 <h3 className="text-xl font-semibold mb-4 text-center">
-                    Need inspiration? Try one of these examples:
+                    {t('needInspiration')}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {examples.map((example, index) => (
@@ -429,6 +638,7 @@ const TextInputPage = ({ onSubmit, currentUser, isLoading, error }) => {
 
 const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }) => {
     const theme = useTheme();
+    const { t } = useLanguage();
     const [isSaved, setIsSaved] = useState(false);
 
     // Check if this analysis is already saved
@@ -442,19 +652,19 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
     // Generate dynamic AI insight based on sentiment
     const generateAIInsight = (moodAnalysis, sentimentScores, text) => {
         if (!moodAnalysis || moodAnalysis.length === 0) return "Analysis complete.";
-        
+
         const primaryMood = moodAnalysis[0];
         const percentage = primaryMood.percentage;
         const moodName = primaryMood.mood.toLowerCase();
-        
+
         // Detect if Latin/Spanish context
         const isLatinContext = /latin|fiesta|dancing|reggaeton|salsa|bachata|español/i.test(text);
-        
+
         let insight = "";
-        
-        if (moodName === 'happy') {
+
+        if (moodName === 'happy' || moodName === 'feliz') {
             if (percentage > 70) {
-                insight = isLatinContext 
+                insight = isLatinContext
                     ? `Your text radiates pure joy and energy! Perfect for upbeat Latin rhythms like reggaeton and salsa.`
                     : `Your text shows overwhelming positivity with ${percentage}% happiness. Perfect for upbeat, energetic music!`;
             } else if (percentage > 40) {
@@ -464,7 +674,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
             } else {
                 insight = `You're experiencing moderate happiness. Gentle, positive music would complement your mood well.`;
             }
-        } else if (moodName === 'sad') {
+        } else if (moodName === 'sad' || moodName === 'triste') {
             if (percentage > 60) {
                 insight = isLatinContext
                     ? `You're going through a tough time. Let some soulful bachata or boleros help you process these feelings.`
@@ -472,18 +682,18 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
             } else {
                 insight = `You seem a bit melancholic. Some reflective music could resonate with your current state.`;
             }
-        } else if (moodName === 'angry') {
+        } else if (moodName === 'angry' || moodName === 'enojado') {
             insight = isLatinContext
                 ? `You're feeling intense emotions! High-energy reggaeton or Latin rock could be the perfect outlet.`
                 : `You're experiencing anger and frustration. Powerful, energetic music might help you channel these feelings.`;
-        } else if (moodName === 'anxious') {
+        } else if (moodName === 'anxious' || moodName === 'ansioso') {
             insight = isLatinContext
                 ? `You're feeling nervous. Some calming nueva canción or gentle acoustic Latin music might help soothe you.`
                 : `You're feeling anxious. Calm, peaceful music could help ease your worries.`;
         } else {
             insight = `Your emotions are complex. Let music be your companion through this journey.`;
         }
-        
+
         return insight;
     };
 
@@ -518,7 +728,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                     }}
                 >
                     <ArrowLeft className="w-4 h-4" />
-                    <span>Analyze New Text</span>
+                    <span>{t('analyzeNewText')}</span>
                 </button>
             </div>
 
@@ -531,7 +741,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                             borderColor: theme.colors.border
                         }}
                     >
-                        <h3 className="text-xl font-bold mb-4">Mood Analysis</h3>
+                        <h3 className="text-xl font-bold mb-4">{t('moodAnalysis')}</h3>
 
                         <div
                             className="p-4 rounded-lg mb-4 text-sm"
@@ -540,7 +750,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                 color: theme.colors.textSecondary
                             }}
                         >
-                            <strong>Your Text:</strong> "{text.length > 100 ? text.substring(0, 100) + '...' : text}"
+                            <strong>{t('yourText')}</strong> "{text.length > 100 ? text.substring(0, 100) + '...' : text}"
                         </div>
 
                         <div className="space-y-3">
@@ -558,7 +768,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                         <div className="flex items-center justify-between mb-2">
                                             <div className="flex items-center space-x-2">
                                                 <IconComponent className="w-5 h-5" style={{ color: mood.color }} />
-                                                <span className="font-medium">{mood.mood}</span>
+                                                <span className="font-medium">{t(`moods.${mood.mood}`)}</span>
                                             </div>
                                             <span className="font-bold" style={{ color: mood.color }}>{mood.percentage}%</span>
                                         </div>
@@ -586,7 +796,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                 color: theme.colors.textSecondary
                             }}
                         >
-                            <strong>AI Insight:</strong> {aiInsight}
+                            <strong>{t('aiInsight')}</strong> {aiInsight}
                         </div>
                     </div>
                 </div>
@@ -599,12 +809,12 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                             borderColor: theme.colors.border
                         }}
                     >
-                        <h3 className="text-xl font-bold mb-4">Recommended Songs</h3>
+                        <h3 className="text-xl font-bold mb-4">{t('recommendedSongs')}</h3>
                         <p
                             className="mb-6"
                             style={{ color: theme.colors.textSecondary }}
                         >
-                            Based on your mood analysis, here are 10 songs perfectly matched to your current vibe:
+                            {t('songsDescription')}
                         </p>
 
                         <div className="space-y-3">
@@ -639,8 +849,8 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                             color: theme.colors.tertiary
                                         }}
                                     >
-                    {song.genre}
-                  </span>
+                                        {song.genre}
+                                    </span>
                                 </div>
                             ))}
                         </div>
@@ -656,7 +866,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                 }}
                             >
                                 <Save className="w-5 h-5" />
-                                <span>{isSaved ? 'Saved' : 'Save Analysis'}</span>
+                                <span>{isSaved ? t('saved') : t('saveAnalysis')}</span>
                             </button>
 
                             <button
@@ -667,7 +877,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
                                     color: 'white'
                                 }}
                             >
-                                Discover More Music
+                                {t('discoverMore')}
                             </button>
                         </div>
                     </div>
@@ -679,6 +889,7 @@ const ResultsPage = ({ analysis, onNavigateBack, onSaveAnalysis, savedAnalyses }
 
 const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAnalysis }) => {
     const theme = useTheme();
+    const { t } = useLanguage();
 
     const formatDate = (timestamp) => {
         const date = new Date(timestamp);
@@ -705,15 +916,15 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
                         }}
                     >
                         <ArrowLeft className="w-4 h-4" />
-                        <span>Back to Home</span>
+                        <span>{t('backToHome')}</span>
                     </button>
                 </div>
 
                 <div className="text-center py-12">
                     <History className="w-16 h-16 mx-auto mb-4" style={{ color: theme.colors.textSecondary }} />
-                    <h2 className="text-2xl font-bold mb-2">No Saved Analyses</h2>
+                    <h2 className="text-2xl font-bold mb-2">{t('noSavedAnalyses')}</h2>
                     <p style={{ color: theme.colors.textSecondary }}>
-                        Start analyzing your mood and save your results to see them here!
+                        {t('noSavedDescription')}
                     </p>
                 </div>
             </div>
@@ -733,10 +944,10 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
                     }}
                 >
                     <ArrowLeft className="w-4 h-4" />
-                    <span>Back to Home</span>
+                    <span>{t('backToHome')}</span>
                 </button>
 
-                <h1 className="text-2xl font-bold">Your Saved Analyses</h1>
+                <h1 className="text-2xl font-bold">{t('yourSavedAnalyses')}</h1>
                 <div></div>
             </div>
 
@@ -761,11 +972,11 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
                                         style={{ color: primaryMood.color }}
                                     />
                                     <span className="font-semibold" style={{ color: primaryMood.color }}>
-                    {primaryMood.mood}
-                  </span>
+                                        {t(`moods.${primaryMood.mood}`)}
+                                    </span>
                                     <span className="text-sm" style={{ color: theme.colors.textSecondary }}>
-                    {primaryMood.percentage}%
-                  </span>
+                                        {primaryMood.percentage}%
+                                    </span>
                                 </div>
 
                                 <button
@@ -789,7 +1000,7 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
                                     <Clock className="w-3 h-3" />
                                     <span>{formatDate(analysis.timestamp)}</span>
                                 </div>
-                                <span>{analysis.songs.length} songs</span>
+                                <span>{analysis.songs.length} {t('songs')}</span>
                             </div>
 
                             <button
@@ -800,7 +1011,7 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
                                     color: 'white'
                                 }}
                             >
-                                View Analysis
+                                {t('viewAnalysis')}
                             </button>
                         </div>
                     );
@@ -812,48 +1023,59 @@ const HistoryPage = ({ savedAnalyses, onNavigateBack, onViewAnalysis, onDeleteAn
 
 const App = () => {
     const [currentUser, setCurrentUser] = useState(null);
-    const [currentPage, setCurrentPage] = useState('login'); // Start with login
+    const [currentPage, setCurrentPage] = useState('login');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
     const [currentAnalysis, setCurrentAnalysis] = useState(null);
     const [savedAnalyses, setSavedAnalyses] = useState([]);
     const mqttClient = React.useRef(new MusicRecommenderMQTT(mqttConfig)).current;
     const spotifyService = React.useRef(new SpotifyService()).current;
-    const sentimentAnalyzer = React.useRef(new SentimentAnalyzer()).current;
+    const sentimentAnalyzer = React.useRef(new TensorFlowSentimentAnalyzer()).current;
+
+    React.useEffect(() => {
+        const initializeTensorFlow = async () => {
+            try {
+                console.log('🚀 Initializing TensorFlow.js sentiment analyzer...');
+                await sentimentAnalyzer.initialize();
+                console.log('✅ TensorFlow.js ready!')
+            } catch (error) {
+                console.error('❌ TensorFlow.js initialization failed:', error);
+            }
+        };
+        initializeTensorFlow();
+
+        return () => {
+            sentimentAnalyzer.dispose();
+        };
+    },  [sentimentAnalyzer]);
 
     const handleTextSubmit = async (text) => {
         setIsLoading(true);
         setError(null);
-        
+
         try {
             console.log('🎯 Starting sentiment analysis and music recommendations...');
-            
-            // Perform sentiment analysis
+
             const sentimentScores = await sentimentAnalyzer.analyzeSentiment(text, currentUser?.id);
-            console.log('📊 Sentiment scores:', sentimentScores);
-            
-            // Get user preferences for Spotify
+            console.log('📊 TensorFlow Sentiment scores:', sentimentScores);
+
             const userPreferences = currentUser ? {
                 preferredGenre: currentUser.preferredGenre || (currentUser.name === 'Jim' ? 'country' : 'pop'),
                 inputText: text
             } : { inputText: text };
-            
-            // Get Spotify recommendations based on sentiment
+
             const spotifyRecommendations = await spotifyService.getRecommendations(sentimentScores, userPreferences);
             console.log('🎵 Spotify recommendations:', spotifyRecommendations);
-            
-            // Save session to MQTT
+
             await mqttClient.saveSession(text, sentimentScores, spotifyRecommendations);
-            
-            // Convert sentiment scores to mood analysis format for UI
+
             const moodAnalysis = [
                 { mood: 'Happy', percentage: Math.round(sentimentScores.joy * 100), icon: Smile, color: '#08D9D6' },
                 { mood: 'Sad', percentage: Math.round(sentimentScores.sadness * 100), icon: Heart, color: '#0065F8' },
                 { mood: 'Angry', percentage: Math.round(sentimentScores.anger * 100), icon: Activity, color: '#FF4444' },
                 { mood: 'Anxious', percentage: Math.round(sentimentScores.fear * 100), icon: Activity, color: '#FFA500' }
             ].filter(mood => mood.percentage > 0).sort((a, b) => b.percentage - a.percentage);
-            
-            // Set current analysis with real data
+
             setCurrentAnalysis({
                 text,
                 timestamp: new Date().toISOString(),
@@ -870,6 +1092,35 @@ const App = () => {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const TensorFlowStatus = () => {
+        const [modelInfo, setModelInfo] = useState(null);
+
+        React.useEffect(() => {
+            const info = sentimentAnalyzer.getModelInfo();
+            setModelInfo(info);
+        }, []);
+
+        if (!modelInfo || process.env.NODE_ENV !== 'development') return null;
+
+        return (
+            <div style={{
+                position: 'fixed',
+                bottom: '10px',
+                right: '10px',
+                background: modelInfo.isLoaded ? '#4CAF50' : '#FF9800',
+                color: 'white',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                zIndex: 1000
+            }}>
+                TF.js: {modelInfo.isLoaded ? '✅ Ready' : '⏳ Loading'}
+                <br />
+                Vocab: {modelInfo.vocabularySize} words
+            </div>
+        );
     };
 
     const handleSaveAnalysis = (analysisData) => {
@@ -928,54 +1179,59 @@ const App = () => {
     const navigateToHistory = () => setCurrentPage('history');
 
     return (
-        <ThemeProvider>
-            <div className="min-h-screen">
-                <Header
-                    onNavigateHome={navigateToHome}
-                    onNavigateHistory={navigateToHistory}
-                    currentPage={currentPage}
-                    currentUser={currentUser}
-                    onLogout={handleLogout}
-                />
-                
-                <main className="max-w-6xl mx-auto px-4 py-8">
-                    {!currentUser ? (
-                        <LoginPage
-                            onLogin={handleLogin}
-                            isLoading={isLoading}
-                            error={error}
-                        />
-                    ) : currentPage === 'genre-selection' ? (
-                        <GenrePreferenceSelector
-                            currentUser={currentUser}
-                            onGenreSelected={handleGenreSelected}
-                            onSkip={handleSkipGenreSelection}
-                        />
-                    ) : currentPage === 'history' ? (
-                        <HistoryPage
-                            savedAnalyses={savedAnalyses}
-                            onNavigateBack={handleNavigateBack}
-                            onViewAnalysis={handleViewAnalysis}
-                            onDeleteAnalysis={handleDeleteAnalysis}
-                        />
-                    ) : currentPage === 'results' ? (
-                        <ResultsPage
-                            analysis={currentAnalysis}
-                            onNavigateBack={handleNavigateBack}
-                            onSaveAnalysis={handleSaveAnalysis}
-                            savedAnalyses={savedAnalyses}
-                        />
-                    ) : (
-                        <TextInputPage 
-                            onSubmit={handleTextSubmit}
-                            currentUser={currentUser}
-                            isLoading={isLoading}
-                            error={error}
-                        />
-                    )}
-                </main>
-            </div>
-        </ThemeProvider>
+        <LanguageProvider>
+            <ThemeProvider>
+                <div className="min-h-screen">
+                    <Header
+                        onNavigateHome={navigateToHome}
+                        onNavigateHistory={navigateToHistory}
+                        currentPage={currentPage}
+                        currentUser={currentUser}
+                        onLogout={handleLogout}
+                    />
+
+                    <main className="max-w-6xl mx-auto px-4 py-8">
+                        {!currentUser ? (
+                            <LoginPage
+                                onLogin={handleLogin}
+                                isLoading={isLoading}
+                                error={error}
+                            />
+                        ) : currentPage === 'genre-selection' ? (
+                            <GenrePreferenceSelector
+                                currentUser={currentUser}
+                                onGenreSelected={handleGenreSelected}
+                                onSkip={handleSkipGenreSelection}
+                            />
+                        ) : currentPage === 'history' ? (
+                            <HistoryPage
+                                savedAnalyses={savedAnalyses}
+                                onNavigateBack={handleNavigateBack}
+                                onViewAnalysis={handleViewAnalysis}
+                                onDeleteAnalysis={handleDeleteAnalysis}
+                            />
+                        ) : currentPage === 'results' ? (
+                            <ResultsPage
+                                analysis={currentAnalysis}
+                                onNavigateBack={handleNavigateBack}
+                                onSaveAnalysis={handleSaveAnalysis}
+                                savedAnalyses={savedAnalyses}
+                            />
+                        ) : (
+                            <TextInputPage
+                                onSubmit={handleTextSubmit}
+                                currentUser={currentUser}
+                                isLoading={isLoading}
+                                error={error}
+                            />
+                        )}
+                    </main>
+
+                    {/* Debug status indicator */}
+                    <TensorFlowStatus />
+                </div>
+            </ThemeProvider>
+        </LanguageProvider>
     );
 };
 

@@ -6,29 +6,29 @@ class SpotifyService {
         this.tokenExpiry = null;
         this.baseUrl = spotifyConfig.apiBaseUrl;
         this.isUsingMockData = false;
-        
+
         // Check if we have valid Spotify credentials
         if (!spotifyConfig.clientId || spotifyConfig.clientId === 'YOUR_SPOTIFY_CLIENT_ID') {
             console.warn('⚠️ Spotify credentials not configured. Using mock data.');
             this.isUsingMockData = true;
         }
     }
-    
+
     // Get Spotify access token using Client Credentials flow
     async getAccessToken() {
         // Return mock data if no credentials
         if (this.isUsingMockData) {
             return null;
         }
-        
+
         // Check if token is still valid
         if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
             return this.accessToken;
         }
-        
+
         try {
             const credentials = btoa(`${spotifyConfig.clientId}:${spotifyConfig.clientSecret}`);
-            
+
             const response = await fetch(spotifyConfig.tokenUrl, {
                 method: 'POST',
                 headers: {
@@ -37,16 +37,16 @@ class SpotifyService {
                 },
                 body: 'grant_type=client_credentials'
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
+
             const data = await response.json();
             this.accessToken = data.access_token;
             // Set expiry time (subtract 60 seconds for safety)
             this.tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
-            
+
             console.log('✅ Spotify access token obtained');
             return this.accessToken;
         } catch (error) {
@@ -55,7 +55,7 @@ class SpotifyService {
             return null;
         }
     }
-    
+
     // Get music recommendations based on sentiment
     async getRecommendations(sentimentScores, userPreferences = null) {
         // Use mock data if no Spotify credentials
@@ -64,7 +64,7 @@ class SpotifyService {
             const isSpanishText = this.detectSpanish(userPreferences?.inputText || '');
             return this.getMockRecommendations(sentimentScores, isSpanishText);
         }
-        
+
         // Get access token
         const token = await this.getAccessToken();
         if (!token) {
@@ -72,11 +72,11 @@ class SpotifyService {
             const isSpanishText = this.detectSpanish(userPreferences?.inputText || '');
             return this.getMockRecommendations(sentimentScores, isSpanishText);
         }
-        
+
         try {
             // Map sentiment to music attributes
             const musicAttributes = this.mapSentimentToMusic(sentimentScores, userPreferences);
-            
+
             const queryParams = new URLSearchParams({
                 seed_genres: musicAttributes.genres.slice(0, 3).join(','), // Max 3 genres
                 target_valence: musicAttributes.valence,
@@ -85,9 +85,9 @@ class SpotifyService {
                 target_popularity: musicAttributes.popularity,
                 limit: spotifyConfig.defaultLimit
             });
-            
+
             console.log('🎯 Spotify search params:', Object.fromEntries(queryParams));
-            
+
             const response = await fetch(`${this.baseUrl}/recommendations?${queryParams}`, {
                 headers: {
                     'Authorization': `Bearer ${this.accessToken}`,
@@ -95,17 +95,17 @@ class SpotifyService {
                 },
                 signal: AbortSignal.timeout(spotifyConfig.requestTimeout)
             });
-            
+
             if (!response.ok) {
                 throw new Error(`Spotify API error: ${response.status} ${response.statusText}`);
             }
-            
+
             const data = await response.json();
-            
+
             if (!data.tracks || data.tracks.length === 0) {
                 throw new Error('No tracks returned from Spotify');
             }
-            
+
             const recommendations = data.tracks.map(track => ({
                 id: track.id,
                 title: track.name,
@@ -118,58 +118,58 @@ class SpotifyService {
                 popularity: track.popularity,
                 duration_ms: track.duration_ms
             }));
-            
+
             console.log(`✅ Got ${recommendations.length} real Spotify recommendations`);
             return recommendations;
-            
+
         } catch (error) {
             console.error('❌ Spotify API error, falling back to mock data:', error);
             const isSpanishText = this.detectSpanish(userPreferences?.inputText || '');
             return this.getMockRecommendations(sentimentScores, isSpanishText);
         }
     }
-    
+
     // Map sentiment scores to Spotify audio features
     mapSentimentToMusic(sentiment, userPreferences = null) {
         // Get the dominant emotion
-        const dominantEmotion = Object.keys(sentiment).reduce((a, b) => 
+        const dominantEmotion = Object.keys(sentiment).reduce((a, b) =>
             sentiment[a] > sentiment[b] ? a : b
         );
-        
+
         // Calculate weighted attributes based on all emotions
         let valence = 0.5;
         let energy = 0.5;
         let danceability = 0.5;
         let popularity = 40; // Lower default for more diverse music
-        
+
         // Weight each emotion's contribution
         valence = (sentiment.joy * 0.9 + sentiment.sadness * 0.1 + sentiment.anger * 0.2 + sentiment.fear * 0.3);
         energy = (sentiment.joy * 0.8 + sentiment.anger * 0.9 + sentiment.fear * 0.3 + sentiment.sadness * 0.4);
         danceability = (sentiment.joy * 0.8 + sentiment.anger * 0.6 + sentiment.sadness * 0.3 + sentiment.fear * 0.2);
-        
+
         // Detect language for genre selection
         const isSpanish = this.detectSpanish(userPreferences?.inputText || '');
-        
+
         // Select genres based on dominant emotion, user preferences, and language
         let genres = [];
         let primaryGenre = '';
-        
+
         if (isSpanish) {
             // Spanish/Latin music genres - using exact Spotify genre names
             console.log(`🎵 Using Spanish/Latin genres for ${dominantEmotion}`);
             switch (dominantEmotion) {
                 case 'joy':
-                    genres = ['reggaeton', 'latin', 'salsa', 'latin-pop'];
+                    genres = ['reggaeton', 'latin', 'salsa', 'latin-pop','merengue', 'cumbia'];
                     primaryGenre = 'Reggaeton';
                     popularity = 60; // Higher for Latin hits
                     break;
                 case 'sadness':
-                    genres = ['bachata', 'bolero', 'latin'];
+                    genres = ['bachata', 'bolero', 'latin', 'ranchera'];
                     primaryGenre = 'Bachata';
                     popularity = 45;
                     break;
                 case 'anger':
-                    genres = ['reggaeton', 'latin-rock', 'latin'];
+                    genres = ['reggaeton', 'latin-rock', 'latin', 'rock en español'];
                     primaryGenre = 'Latin Rock';
                     popularity = 50;
                     break;
@@ -190,7 +190,7 @@ class SpotifyService {
             primaryGenre = genrePool.primaryGenre;
             popularity = genrePool.popularity;
         }
-        
+
         // Adjust audio features based on preferences
         if (userPreferences?.preferredGenre === 'country') {
             valence *= 0.8;
@@ -215,12 +215,12 @@ class SpotifyService {
             popularity = 30;
             danceability *= 0.7;
         }
-        
+
         // Clamp values between 0 and 1
         valence = Math.max(0, Math.min(1, valence));
         energy = Math.max(0, Math.min(1, energy));
         danceability = Math.max(0, Math.min(1, danceability));
-        
+
         return {
             genres: genres.slice(0, 3), // Spotify limit
             primaryGenre,
@@ -236,7 +236,7 @@ class SpotifyService {
     // Detect Spanish text
     detectSpanish(text) {
         if (!text) return false;
-        
+
         const spanishWords = [
             'estoy', 'feliz', 'triste', 'enojado', 'me siento', 'muy', 'hoy', 'día',
             'corazón', 'amor', 'vida', 'bien', 'mal', 'contento', 'alegre', 'emocionado',
@@ -247,21 +247,21 @@ class SpotifyService {
             'fiesta', 'baile', 'bailar', 'latin', 'latino', 'latina', 'reggaeton',
             'salsa', 'bachata', 'merengue', 'cumbia', 'ranchera', 'mariachi'
         ];
-        
+
         const latinKeywords = [
-            'latin music', 'latin', 'reggaeton', 'salsa', 'bachata', 'fiesta', 
+            'latin music', 'latin', 'reggaeton', 'salsa', 'bachata', 'fiesta',
             'dancing', 'bailar', 'baile', 'merengue', 'cumbia', 'spanish music',
             'hispanic music', 'latino music', 'hard fiesta'
         ];
-        
+
         const lowerText = text.toLowerCase();
         const spanishWordCount = spanishWords.filter(word => lowerText.includes(word)).length;
         const hasSpanishChars = /[ñáéíóúü¿¡]/i.test(text);
         const hasLatinKeywords = latinKeywords.some(keyword => lowerText.includes(keyword));
-        
+
         const isSpanish = spanishWordCount >= 1 || hasSpanishChars || hasLatinKeywords;
         console.log(`🎵 Spotify Spanish detection for "${text}": ${spanishWordCount} words, hasChars: ${hasSpanishChars}, latinKeywords: ${hasLatinKeywords}, isSpanish: ${isSpanish}`);
-        
+
         return isSpanish;
     }
 
@@ -304,14 +304,14 @@ class SpotifyService {
         const emotionPool = genrePools[emotion] || genrePools.joy;
         return emotionPool[preferredGenre] || emotionPool.default;
     }
-    
+
     // Fallback mock recommendations
     getMockRecommendations(sentiment, isSpanish = false) {
         // Check if we should use Spanish songs
         if (isSpanish) {
             return this.getSpanishMockRecommendations(sentiment);
         }
-        
+
         const mockSongs = {
             joy: [
                 { id: '5b88tNINg4Q4nraccMNdvX', title: 'Happy', artist: 'Pharrell Williams', album: 'G I R L', genre: 'Pop', spotify_id: '5b88tNINg4Q4nraccMNdvX', popularity: 85 },
@@ -352,11 +352,11 @@ class SpotifyService {
                 { id: 'mock_fear_5', title: 'Aqueous Transmission', artist: 'Incubus', album: 'Morning View', genre: 'Alternative', spotify_id: 'mock_fear_5', popularity: 58 }
             ]
         };
-        
-        const dominantEmotion = Object.keys(sentiment).reduce((a, b) => 
+
+        const dominantEmotion = Object.keys(sentiment).reduce((a, b) =>
             sentiment[a] > sentiment[b] ? a : b
         );
-        
+
         console.log(`🎵 Using mock recommendations for ${dominantEmotion}`);
         return mockSongs[dominantEmotion] || mockSongs.joy;
     }
@@ -404,7 +404,7 @@ class SpotifyService {
             ]
         };
 
-        const dominantEmotion = Object.keys(sentiment).reduce((a, b) => 
+        const dominantEmotion = Object.keys(sentiment).reduce((a, b) =>
             sentiment[a] > sentiment[b] ? a : b
         );
 
